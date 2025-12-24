@@ -1,0 +1,7 @@
+{
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "name": "LingoLive AI",
+  "description": "Advanced real-time language tutor with Gemini AI"
+}
