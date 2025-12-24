@@ -399,7 +399,7 @@ const App: React.FC = () => {
                 <p>Zephyr will correct your grammar automatically.</p>
               </div>
             ) : (
-              transcript.map((entry, idx) => <TranscriptItem key={idx} entry={entry} />)
+              transcript.map((entry, idx) => <transcriptitem key={idx} entry={entry} />)
             )}
             <div ref={transcriptEndRef} />
           </div>
