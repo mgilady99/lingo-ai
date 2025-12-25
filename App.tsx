@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
 import { Mic, MicOff, Headphones, XCircle, ChevronRight, RefreshCw, Trash2, AlertCircle } from 'lucide-react';
@@ -6,7 +5,7 @@ import { ConnectionStatus, SUPPORTED_LANGUAGES, SCENARIOS, Language, PracticeSce
 import { decode, decodeAudioData, createPcmBlob } from './services/audioService';
 import Avatar from './components/Avatar';
 import AudioVisualizer from './components/AudioVisualizer';
-import transcriptItem from './components/transcriptitem';
+import transcriptitem from './components/transcriptitem'; // שורה 10 - נשאר קטן
 
 const App: React.FC = () => {
   const [hasKey, setHasKey] = useState<boolean | null>(null);
@@ -153,7 +152,6 @@ const App: React.FC = () => {
             scriptProcessor.onaudioprocess = (e) => {
               const inputData = e.inputBuffer.getChannelData(0).slice();
               const pcmBlob = createPcmBlob(inputData);
-              // CRITICAL: Solely rely on sessionPromise resolves and then call session.sendRealtimeInput.
               sessionPromise.then(s => {
                 if (!isMutedRef.current && s) {
                   s.sendRealtimeInput({ media: pcmBlob });
@@ -175,7 +173,6 @@ const App: React.FC = () => {
               setInterimModelText(currentOutputTranscription.current);
             }
 
-            // Fix line 171: Properly type transcription entries to resolve role incompatibility error
             if (m.serverContent?.turnComplete) {
               const userText = currentInputTranscription.current;
               const modelText = currentOutputTranscription.current;
@@ -214,7 +211,6 @@ const App: React.FC = () => {
               sourcesRef.current.add(source);
             }
 
-            // Handle server interruption by stopping active audio playback
             if (m.serverContent?.interrupted) {
               sourcesRef.current.forEach(s => { try { s.stop(); } catch (e) {} });
               sourcesRef.current.clear();
@@ -352,9 +348,15 @@ const App: React.FC = () => {
             <span className="text-[10px] bg-slate-800 px-2 py-1 rounded text-slate-400 font-bold">{transcript.length} Logs</span>
           </div>
           <div className="flex-1 overflow-y-auto scrollbar-thin flex flex-col gap-2 pr-2">
+            {/* שינוי 1: אותיות קטנות כאן */}
             {transcript.map((entry, idx) => <transcriptitem key={idx} entry={entry} />)}
-            {interimUserText && <TranscriptItem entry={{role: 'user', text: interimUserText, timestamp: new Date()}} />}
-            {interimModelText && <TranscriptItem entry={{role: 'model', text: interimModelText, timestamp: new Date()}} />}
+            
+            {/* שינוי 2: אותיות קטנות כאן */}
+            {interimUserText && <transcriptitem entry={{role: 'user', text: interimUserText, timestamp: new Date()}} />}
+            
+            {/* שינוי 3: אותיות קטנות כאן */}
+            {interimModelText && <transcriptitem entry={{role: 'model', text: interimModelText, timestamp: new Date()}} />}
+            
             {transcript.length === 0 && !interimUserText && (
               <div className="flex-1 flex flex-col items-center justify-center text-slate-600 opacity-40 italic text-sm text-center">
                 <p className="mb-2 font-bold text-white/50">Listening for your voice...</p>
