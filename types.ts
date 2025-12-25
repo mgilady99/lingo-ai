@@ -28,6 +28,10 @@ export const SUPPORTED_LANGUAGES: Language[] = [
   { code: 'ru-RU', name: 'Russian', flag: '🇷🇺' },
   { code: 'ja-JP', name: 'Japanese', flag: '🇯🇵' },
   { code: 'ko-KR', name: 'Korean', flag: '🇰🇷' },
+  { code: 'tr-TR', name: 'Turkish', flag: '🇹🇷' },
+  { code: 'vi-VN', name: 'Vietnamese', flag: '🇻🇳' },
+  { code: 'th-TH', name: 'Thai', flag: '🇹🇭' },
+  { code: 'nl-NL', name: 'Dutch', flag: '🇳🇱' },
 ];
 
 export interface PracticeScenario {
@@ -38,10 +42,10 @@ export interface PracticeScenario {
 }
 
 export const SCENARIOS: PracticeScenario[] = [
-  { id: 'simultaneous', title: 'LIVE TRANSLATE', description: 'Real-time simultaneous interpretation (Lecture mode).', icon: '⚡' },
-  { id: 'translator', title: 'DIALOGUE', description: 'Two-way translation, waits for sentence completion.', icon: '🔄' },
-  { id: 'casual', title: 'CHAT', description: 'Practice conversation in the selected language.', icon: '💬' },
-  { id: 'learn', title: 'LEARN', description: 'Language practice with real-time error corrections.', icon: '🎓' },
+  { id: 'simultaneous', title: 'LIVE TRANSLATE', description: 'Simultaneous interpretation. No waiting, immediate live feed.', icon: '⚡' },
+  { id: 'translator', title: 'DIALOGUE', description: 'Wait for sentence completion before translating.', icon: '🔄' },
+  { id: 'casual', title: 'CHAT', description: 'Natural conversation practice in the target language.', icon: '💬' },
+  { id: 'learn', title: 'LEARN', description: 'Practice with corrections and grammar help.', icon: '🎓' },
 ];
 
 export interface TranscriptionEntry {
@@ -51,3 +55,4 @@ export interface TranscriptionEntry {
   translation?: string;
   timestamp: Date;
 }
+
