@@ -123,41 +123,30 @@ const App: React.FC = () => {
       let systemInstruction = "";
       
       if (selectedScenario.id === 'simultaneous') {
-        systemInstruction = `STRICT OPERATING MODE: SIMULTANEOUS LIVE INTERPRETER.
-        TARGET LANGUAGE: ${targetLang.name}.
-        SOURCE LANGUAGE: ${nativeLang.name}.
-        
-        RULES:
-        1. TRANSLATE IMMEDIATELY. Do not wait for pauses or sentence endings.
-        2. AS SOON as you process a chunk of audio, output the translation in ${targetLang.name}.
-        3. NO CHATTING. NO RESPONSE. NO "HERE IS THE TRANSLATION". ONLY THE TRANSLATED SPEECH.
-        4. YOU ARE A TRANSLATION HEADSET FOR A LIVE LECTURE.`;
+        systemInstruction = `STRICT MODE: SIMULTANEOUS LIVE INTERPRETER.
+        SOURCE: ${nativeLang.name}. TARGET: ${targetLang.name}.
+        RULE 1: TRANSLATE IMMEDIATELY. DO NOT WAIT for sentence endings.
+        RULE 2: Output ONLY the translated audio and text in ${targetLang.name}.
+        RULE 3: Do not engage in conversation. You are a live translation feed for a lecture.
+        RULE 4: Start translating as soon as you hear the first words.`;
       } else if (selectedScenario.id === 'translator') {
-        systemInstruction = `ROLE: BI-DIRECTIONAL DIALOGUE TRANSLATOR.
+        systemInstruction = `STRICT MODE: DIALOGUE TRANSLATOR.
         LANGUAGES: ${nativeLang.name} and ${targetLang.name}.
-        
-        RULES:
-        1. WAIT for the speaker to complete their thought/sentence before translating.
-        2. Translate from ${nativeLang.name} to ${targetLang.name} and vice-versa.
-        3. Output ONLY the translation. Keep it professional and accurate.`;
+        RULE 1: WAIT for the user to finish their full sentence/thought before translating.
+        RULE 2: Translate from ${nativeLang.name} to ${targetLang.name} and vice-versa.
+        RULE 3: Only provide the translation. Keep the meaning exact.`;
       } else if (selectedScenario.id === 'casual') {
-        systemInstruction = `ROLE: CONVERSATIONAL PARTNER.
-        PRIMARY LANGUAGE: ${targetLang.name}.
-        
-        RULES:
-        1. Chat naturally with the user ONLY in ${targetLang.name}.
-        2. Keep the conversation engaging.
-        3. If the user is really stuck and speaks ${nativeLang.name}, help them but encourage returning to ${targetLang.name}.`;
-      } else if (selectedScenario.id === 'learn') {
-        systemInstruction = `ROLE: LANGUAGE TEACHER (ZEPHYR).
+        systemInstruction = `STRICT MODE: CONVERSATIONAL PARTNER.
         TARGET LANGUAGE: ${targetLang.name}.
-        USER NATIVE LANGUAGE: ${nativeLang.name}.
-        
-        RULES:
-        1. Speak in ${targetLang.name}.
-        2. LISTEN carefully to the user.
-        3. IF the user makes a mistake in ${targetLang.name}, provide the corrected text in brackets [Correction: ...] in the transcription.
-        4. Explain grammar points in ${nativeLang.name} ONLY if absolutely necessary.`;
+        RULE 1: Respond ONLY in ${targetLang.name}.
+        RULE 2: Chat naturally about various topics.
+        RULE 3: Do not translate unless the user explicitly asks how to say something.`;
+      } else if (selectedScenario.id === 'learn') {
+        systemInstruction = `STRICT MODE: LANGUAGE TEACHER.
+        TARGET LANGUAGE: ${targetLang.name}. NATIVE LANGUAGE: ${nativeLang.name}.
+        RULE 1: Speak in ${targetLang.name}.
+        RULE 2: If the user makes a grammar or vocabulary mistake, provide the corrected text in brackets [Correction: ...] at the end of your message.
+        RULE 3: Be encouraging and helpful.`;
       }
       
       const sessionPromise = ai.live.connect({
@@ -237,7 +226,7 @@ const App: React.FC = () => {
             }
           },
           onerror: (e: any) => { 
-            setError('Connection error. Try again.');
+            setError('Connection error. Try restarting.');
             stopConversation(); 
           },
           onclose: () => setStatus(ConnectionStatus.DISCONNECTED)
@@ -282,15 +271,15 @@ const App: React.FC = () => {
         <div className="w-full md:w-[450px] flex flex-col p-6 gap-6 bg-slate-900/30 border-r border-white/5 overflow-y-auto scrollbar-thin">
           <div className="w-full bg-slate-900/90 rounded-[2rem] border border-white/10 p-5 flex flex-col gap-4 shadow-xl">
             <div className="flex flex-col gap-1 mb-2 px-1">
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Language Setup</label>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Language Pair</label>
               <div className="flex items-center gap-2 bg-slate-800/40 p-2 rounded-[1.5rem]">
-                <div className="flex flex-col flex-1">
-                  <span className="text-[8px] text-center text-slate-400 font-black mb-1">FROM</span>
+                <div className="flex flex-col flex-1 overflow-hidden">
+                  <span className="text-[8px] text-center text-slate-400 font-black mb-1">SOURCE</span>
                   <select 
                     value={nativeLang.code} 
                     onChange={e => setNativeLang(SUPPORTED_LANGUAGES.find(l => l.code === e.target.value)!)} 
                     disabled={status !== ConnectionStatus.DISCONNECTED}
-                    className="bg-slate-900 border-none rounded-xl py-2 text-lg font-bold text-center appearance-none cursor-pointer hover:bg-slate-800 transition-colors"
+                    className="bg-slate-900 border-none rounded-xl py-2 text-sm md:text-lg font-bold text-center appearance-none cursor-pointer hover:bg-slate-800 transition-colors w-full outline-none"
                   >
                     {SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}
                   </select>
@@ -299,18 +288,19 @@ const App: React.FC = () => {
                   <ChevronRight size={16} className="text-indigo-500" />
                   <ChevronRight size={16} className="text-indigo-500 -mt-2 rotate-180" />
                 </div>
-                <div className="flex flex-col flex-1">
-                  <span className="text-[8px] text-center text-slate-400 font-black mb-1">TO</span>
+                <div className="flex flex-col flex-1 overflow-hidden">
+                  <span className="text-[8px] text-center text-slate-400 font-black mb-1">TARGET</span>
                   <select 
                     value={targetLang.code} 
                     onChange={e => setTargetLang(SUPPORTED_LANGUAGES.find(l => l.code === e.target.value)!)} 
                     disabled={status !== ConnectionStatus.DISCONNECTED}
-                    className="bg-slate-900 border-none rounded-xl py-2 text-lg font-bold text-center appearance-none cursor-pointer hover:bg-slate-800 transition-colors"
+                    className="bg-slate-900 border-none rounded-xl py-2 text-sm md:text-lg font-bold text-center appearance-none cursor-pointer hover:bg-slate-800 transition-colors w-full outline-none"
                   >
                     {SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}
                   </select>
                 </div>
               </div>
+              <p className="text-[9px] text-center text-slate-500 mt-2 italic">Scroll list for more languages</p>
             </div>
             
             <div className="grid grid-cols-2 gap-2">
@@ -343,7 +333,7 @@ const App: React.FC = () => {
                   <button onClick={() => setIsMuted(!isMuted)} className={`p-5 rounded-full border-2 transition-all ${isMuted ? 'bg-red-500 border-red-400' : 'bg-slate-800 border-slate-700'}`}>
                     {isMuted ? <MicOff size={24} /> : <Mic size={24} />}
                   </button>
-                  <button onClick={stopConversation} className="bg-white text-slate-950 px-8 py-4 rounded-full font-black text-sm tracking-widest uppercase hover:bg-slate-200 transition-colors">Stop</button>
+                  <button onClick={stopConversation} className="bg-white text-slate-950 px-8 py-4 rounded-full font-black text-sm tracking-widest uppercase hover:bg-slate-200 transition-colors">Stop Session</button>
                 </div>
               ) : (
                 <button 
@@ -381,11 +371,13 @@ const App: React.FC = () => {
 
             {transcript.length === 0 && !interimUserText && !interimModelText && (
               <div className="flex-1 flex flex-col items-center justify-center text-slate-600 opacity-40 italic text-sm text-center max-w-xs mx-auto">
-                <p className="mb-2 font-bold">Ready for input</p>
+                <p className="mb-2 font-bold">Waiting for input...</p>
                 <p className="text-xs">
                   {selectedScenario.id === 'simultaneous' 
-                    ? `Simultaneous interpretation enabled. I will translate from ${nativeLang.name} to ${targetLang.name} as you speak.`
-                    : `Speak in ${nativeLang.name} or ${targetLang.name} to begin.`}
+                    ? `I will translate from ${nativeLang.name} to ${targetLang.name} in real-time.`
+                    : selectedScenario.id === 'translator'
+                    ? `Speak in ${nativeLang.name} or ${targetLang.name} and wait for my translation.`
+                    : `Let's practice your ${targetLang.name} skills!` }
                 </p>
               </div>
             )}
@@ -398,4 +390,3 @@ const App: React.FC = () => {
 };
 
 export default App;
-
