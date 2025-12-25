@@ -6,7 +6,7 @@ import { ConnectionStatus, SUPPORTED_LANGUAGES, SCENARIOS, Language, PracticeSce
 import { decode, decodeAudioData, createPcmBlob } from './services/audioService';
 import Avatar from './components/Avatar';
 import AudioVisualizer from './components/AudioVisualizer';
-import TranscriptItem from './components/TranscriptItem';
+import transcriptItem from './components/transcriptitem';
 
 const App: React.FC = () => {
   const [hasKey, setHasKey] = useState<boolean | null>(null);
@@ -352,7 +352,7 @@ const App: React.FC = () => {
             <span className="text-[10px] bg-slate-800 px-2 py-1 rounded text-slate-400 font-bold">{transcript.length} Logs</span>
           </div>
           <div className="flex-1 overflow-y-auto scrollbar-thin flex flex-col gap-2 pr-2">
-            {transcript.map((entry, idx) => <TranscriptItem key={idx} entry={entry} />)}
+            {transcript.map((entry, idx) => <transcriptitem key={idx} entry={entry} />)}
             {interimUserText && <TranscriptItem entry={{role: 'user', text: interimUserText, timestamp: new Date()}} />}
             {interimModelText && <TranscriptItem entry={{role: 'model', text: interimModelText, timestamp: new Date()}} />}
             {transcript.length === 0 && !interimUserText && (
