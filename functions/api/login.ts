@@ -8,31 +8,60 @@ export async function onRequestPost(context) {
       return new Response(JSON.stringify({ error: "נא להזין אימייל" }), { status: 400 });
     }
 
-    // 1. בדיקה אם המשתמש כבר קיים
-    const user = await env.DB.prepare("SELECT * FROM users WHERE email = ?").bind(email).first();
+    // שליפת המשתמש מהמסד
+    let user = await env.DB.prepare("SELECT * FROM users WHERE email = ?").bind(email).first();
 
-    // 2. משתמש קיים (התחברות רגילה)
+    // ---------------------------------------------------------
+    // תרחיש א': משתמש קיים (התחברות)
+    // ---------------------------------------------------------
     if (user) {
+      // 1. בדיקת סיסמה
       if (user.password && user.password !== password) {
          return new Response(JSON.stringify({ error: "סיסמה שגויה" }), { status: 401 });
       }
+
+      // 2. בדיקת שדרוג: אם המשתמש הזין קוד הטבה והוא עדיין לא PRO
+      if (promoCode && user.plan !== 'PRO') {
+        try {
+          // בדיקה אם הקוד תקין ולא משומש
+          const codeRecord = await env.DB.prepare("SELECT * FROM promo_codes WHERE code = ? AND is_used = 0").bind(promoCode).first();
+          
+          if (codeRecord) {
+            // שדרוג המשתמש ב-DB ל-PRO (שמירה קבועה!)
+            await env.DB.prepare("UPDATE users SET plan = 'PRO', token_limit = 1000000 WHERE email = ?").bind(email).run();
+            
+            // סימון הקוד כמשומש
+            await env.DB.prepare("UPDATE promo_codes SET is_used = 1 WHERE code = ?").bind(promoCode).run();
+            
+            // עדכון האובייקט המקומי כדי להחזיר למשתמש מיד את הסטטוס החדש
+            user.plan = 'PRO';
+            user.token_limit = 1000000;
+          } else {
+             return new Response(JSON.stringify({ error: "קוד הטבה שגוי או שכבר נוצל" }), { status: 400 });
+          }
+        } catch (e) {
+          console.log("Promo check error:", e);
+        }
+      }
+
+      // החזרת המשתמש (המעודכן או הרגיל)
       return new Response(JSON.stringify(user));
     }
 
-    // 3. משתמש חדש (הרשמה)
+    // ---------------------------------------------------------
+    // תרחיש ב': משתמש חדש (הרשמה)
+    // ---------------------------------------------------------
     let plan = 'FREE';
     let tokenLimit = 5000;
 
-    // --- בדיקת קוד הטבה (אם הוזן) ---
+    // בדיקת קוד הטבה למשתמש חדש
     if (promoCode) {
-      // נניח שיש טבלה בשם 'promo_codes' עם עמודות 'code' ו-'is_used'
-      // הערה: וודא שהטבלה קיימת ב-D1. אם לא, מחק את הבלוק הזה או צור את הטבלה.
       try {
         const codeRecord = await env.DB.prepare("SELECT * FROM promo_codes WHERE code = ? AND is_used = 0").bind(promoCode).first();
         
         if (codeRecord) {
           plan = 'PRO';
-          tokenLimit = 1000000; // המון טוקנים למנוי פרו
+          tokenLimit = 1000000;
           
           // סימון הקוד כמשומש
           await env.DB.prepare("UPDATE promo_codes SET is_used = 1 WHERE code = ?").bind(promoCode).run();
@@ -40,17 +69,15 @@ export async function onRequestPost(context) {
           return new Response(JSON.stringify({ error: "קוד הטבה שגוי או שכבר נוצל" }), { status: 400 });
         }
       } catch (e) {
-        console.log("Promo code error (maybe table missing):", e);
-        // מתעלמים משגיאה אם הטבלה לא קיימת, וממשיכים כחינם
+        // מתעלמים אם אין טבלת קודים
       }
     }
-    // -------------------------------
 
     if (!password || password.length < 4) {
        return new Response(JSON.stringify({ error: "סיסמה חייבת להכיל לפחות 4 תווים" }), { status: 400 });
     }
 
-    // יצירת המשתמש
+    // יצירת המשתמש החדש עם הסטטוס הנכון
     await env.DB.prepare("INSERT INTO users (email, password, plan, tokens_used, token_limit) VALUES (?, ?, ?, 0, ?)")
       .bind(email, password, plan, tokenLimit).run();
       
