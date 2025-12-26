@@ -8,25 +8,29 @@ export async function onRequestPost(context) {
       return new Response(JSON.stringify({ error: "נא להזין אימייל" }), { status: 400 });
     }
 
-    // בדיקה מול מסד הנתונים
+    // 1. בדיקה אם המשתמש קיים
     const user = await env.DB.prepare("SELECT * FROM users WHERE email = ?").bind(email).first();
 
-    // אם המשתמש לא קיים - יוצרים חדש
+    // 2. משתמש חדש? ניצור אותו ונישמור את הסיסמה שלו!
     if (!user) {
-      await env.DB.prepare("INSERT INTO users (email, plan, tokens_used, token_limit) VALUES (?, 'FREE', 0, 5000)")
-        .bind(email).run();
+      if (!password || password.length < 4) {
+         return new Response(JSON.stringify({ error: "סיסמה קצרה מדי למשתמש חדש" }), { status: 400 });
+      }
+
+      await env.DB.prepare("INSERT INTO users (email, password, plan, tokens_used, token_limit) VALUES (?, ?, 'FREE', 0, 5000)")
+        .bind(email, password).run();
+        
       return new Response(JSON.stringify({ email, plan: 'FREE', role: 'USER', tokens_used: 0 }));
     }
 
-    // בדיקת סיסמה (אם קיימת בבסיס הנתונים)
+    // 3. משתמש קיים? נבדוק שהסיסמה תואמת למה ששמור ב-DB
     if (user.password && user.password !== password) {
-       // אם הסיסמה ב-DB לא תואמת, נחזיר שגיאה (אלא אם זה המעקף שיטופל בצד לקוח)
        return new Response(JSON.stringify({ error: "סיסמה שגויה" }), { status: 401 });
     }
 
     return new Response(JSON.stringify(user));
 
   } catch (e) {
-    return new Response(JSON.stringify({ error: "שגיאת שרת: " + e.message }), { status: 500 });
+    return new Response(JSON.stringify({ error: "שגיאת שרת" }), { status: 500 });
   }
 }
