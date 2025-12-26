@@ -1,69 +1,85 @@
 import React, { useState } from 'react';
-import { Mail, Lock, LogIn, UserPlus, Headphones } from 'lucide-react';
+import { LogIn, Lock } from 'lucide-react';
 
-const Login: React.FC<{ onLoginSuccess: () => void }> = ({ onLoginSuccess }) => {
-  const [isLogin, setIsLogin] = useState(true);
+const Login: React.FC<{ onLoginSuccess: (user: any) => void }> = ({ onLoginSuccess }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    // כאן נחבר בעתיד את ה-API שיצרנו ב-Cloudflare
-    console.log("Submit:", { email, password, mode: isLogin ? 'login' : 'signup' });
-    alert("נכנסת בהצלחה! (כרגע במצב פיתוח)");
-    onLoginSuccess();
+  const handleLogin = async () => {
+    // --- מעקף חירום למנהל (עוקף שרת) ---
+    // אם זה אתה - המערכת מכניסה אותך מיד בלי לשאול שאלות
+    if (email.toLowerCase().trim() === 'mgilady@gmail.com' && password === 'Meir@mmmeir123') {
+        onLoginSuccess({
+            email: 'mgilady@gmail.com',
+            role: 'ADMIN',
+            plan: 'PRO',
+            tokens_used: 0
+        });
+        return;
+    }
+    // ------------------------------------
+
+    if (!email.includes('@')) { alert("אימייל לא תקין"); return; }
+    setIsLoading(true);
+    
+    try {
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      const data = await res.json();
+      
+      if (res.ok) {
+        onLoginSuccess(data);
+      } else {
+        alert(data.error || "שגיאה בכניסה");
+      }
+    } catch (e) {
+      alert("תקלה בתקשורת לשרת");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
-    <div className="h-screen bg-slate-950 flex items-center justify-center p-4 font-['Inter'] rtl">
-      <div className="w-full max-w-md bg-slate-900/90 rounded-[3rem] border border-white/10 p-10 shadow-2xl">
-        <div className="flex flex-col items-center mb-10">
-          <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/20 mb-4">
-            <Headphones size={32} className="text-white" />
-          </div>
-          <h1 className="text-3xl font-black text-white uppercase tracking-tighter">LingoLive Pro</h1>
-          <p className="text-slate-400 mt-2 font-bold">{isLogin ? 'ברוך השב! היכנס לחשבון' : 'צור חשבון חדש בחינם'}</p>
+    <div className="flex h-screen items-center justify-center bg-[#0f172a] font-['Inter'] rtl text-white">
+      <div className="w-full max-w-sm p-8 bg-[#1e293b] rounded-3xl border border-white/10 shadow-2xl text-center">
+        <div className="w-16 h-16 bg-indigo-600 rounded-2xl mx-auto flex items-center justify-center mb-6 shadow-lg shadow-indigo-500/50">
+          <LogIn size={32} className="text-white" />
         </div>
-
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <h1 className="text-3xl font-black text-white mb-2 tracking-tight">LINGOLIVE PRO</h1>
+        <p className="text-slate-300 text-sm font-bold mb-8">ברוך הבא! הכנס לחשבון</p>
+        
+        <div className="space-y-4">
+          <input 
+            type="email" 
+            placeholder="mgilady@gmail.com" 
+            value={email} 
+            onChange={e => setEmail(e.target.value)}
+            className="w-full bg-slate-900 border border-slate-600 text-white placeholder-slate-400 rounded-xl px-4 py-4 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/50 transition-all font-bold text-lg dir-ltr text-center"
+          />
           <div className="relative">
-            <Mail className="absolute right-4 top-4 text-slate-500" size={20} />
-            <input 
-              type="email" 
-              placeholder="אימייל" 
-              className="w-full bg-slate-800/50 border border-white/10 rounded-2xl py-4 pr-12 pl-4 text-white outline-none focus:border-indigo-500 transition-all font-bold"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-          </div>
-
-          <div className="relative">
-            <Lock className="absolute right-4 top-4 text-slate-500" size={20} />
             <input 
               type="password" 
               placeholder="סיסמה" 
-              className="w-full bg-slate-800/50 border border-white/10 rounded-2xl py-4 pr-12 pl-4 text-white outline-none focus:border-indigo-500 transition-all font-bold"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
+              value={password} 
+              onChange={e => setPassword(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-600 text-white placeholder-slate-400 rounded-xl px-4 py-4 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/50 transition-all font-bold text-lg dir-ltr text-center"
             />
+            <Lock className="absolute left-4 top-4 text-slate-400" size={20} />
           </div>
 
-          <button className="bg-indigo-600 hover:bg-indigo-500 text-white font-black py-4 rounded-2xl shadow-xl shadow-indigo-500/20 transition-all flex items-center justify-center gap-2 mt-4 text-lg">
-            {isLogin ? <LogIn size={20} /> : <UserPlus size={20} />}
-            {isLogin ? 'התחבר עכשיו' : 'הירשם עכשיו'}
-          </button>
-        </form>
-
-        <div className="mt-8 text-center">
           <button 
-            onClick={() => setIsLogin(!isLogin)}
-            className="text-slate-400 hover:text-white text-sm font-bold transition-colors"
+            onClick={handleLogin} disabled={isLoading}
+            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black py-4 rounded-xl transition-all shadow-lg active:scale-95 text-xl mt-4 border border-indigo-400/30"
           >
-            {isLogin ? 'אין לך חשבון? הירשם כאן' : 'כבר יש לך חשבון? התחבר כאן'}
+            {isLoading ? "מתחבר..." : "התחבר עכשיו ->"}
           </button>
         </div>
+        
+        <p className="mt-6 text-slate-500 text-xs">אין לך חשבון? הירשם כאן</p>
       </div>
     </div>
   );
