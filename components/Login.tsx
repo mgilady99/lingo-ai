@@ -9,8 +9,8 @@ interface LoginProps {
 const Login: React.FC<LoginProps> = ({ onLoginSuccess, onForgotPassword }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [promoCode, setPromoCode] = useState(''); // שדה חדש לקוד
-  const [showPromo, setShowPromo] = useState(false); // האם להציג את השדה
+  const [promoCode, setPromoCode] = useState('');
+  const [showPromo, setShowPromo] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -19,7 +19,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onForgotPassword }) => {
     const cleanPass = password.trim();
     const cleanPromo = promoCode.trim();
 
-    // מעקף מנהל
+    // מעקף מנהל (Hardcoded Bypass)
     if (cleanEmail === 'mgilady@gmail.com' && cleanPass === 'MEIR@mmmeir12321') {
         onLoginSuccess({ email: 'mgilady@gmail.com', role: 'ADMIN', plan: 'PRO', tokens_used: 0 });
         return;
@@ -32,13 +32,12 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onForgotPassword }) => {
       const res = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // שולחים גם את קוד ההטבה
         body: JSON.stringify({ email: cleanEmail, password: cleanPass, promoCode: cleanPromo })
       });
       const data = await res.json();
       
       if (res.ok) {
-        if(data.plan === 'PRO' && cleanPromo) alert("קוד ההטבה התקבל! קיבלת מנוי PRO");
+        if(data.plan === 'PRO' && cleanPromo) alert("קוד ההטבה התקבל בהצלחה! מנוי PRO הופעל.");
         onLoginSuccess(data);
       } else {
         alert(data.error || "שגיאה בכניסה");
@@ -94,7 +93,8 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onForgotPassword }) => {
             onClick={handleLogin} disabled={isLoading}
             className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black py-4 rounded-xl transition-all shadow-lg active:scale-95 text-xl mt-4 border border-indigo-400/30"
           >
-            {isLoading ? "בודק..." : (promoCode ? "הפעל קוד והכנס אותי ->" : "התחבר עכשיו ->")}
+            {/* כאן היה התיקון: התחבר עכשיו */}
+            {isLoading ? "מתחבר..." : (promoCode ? "הפעל קוד והכנס אותי ->" : "התחבר עכשיו ->")}
           </button>
         </div>
         
