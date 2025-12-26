@@ -2,11 +2,20 @@ export async function onRequestPost(context) {
   const { env, request } = context;
   
   try {
-    const { email, password, promoCode } = await request.json();
+    let { email, password, promoCode } = await request.json();
 
     if (!email) {
       return new Response(JSON.stringify({ error: "נא להזין אימייל" }), { status: 400 });
     }
+
+    // --- ניקוי קלטים (התיקון הקריטי) ---
+    email = email.trim().toLowerCase();
+    password = password.trim();
+    if (promoCode) {
+        // הופך לאותיות גדולות ומוחק רווחים לפני ואחרי
+        promoCode = promoCode.trim().toUpperCase();
+    }
+    // ------------------------------------
 
     // 1. ננסה למצוא את המשתמש
     let user = await env.DB.prepare("SELECT * FROM users WHERE email = ?").bind(email).first();
@@ -20,30 +29,33 @@ export async function onRequestPost(context) {
          return new Response(JSON.stringify({ error: "סיסמה שגויה" }), { status: 401 });
       }
 
-      // --- תיקון: אם המשתמש הוא כבר PRO, מתעלמים מהקוד ומחזירים הצלחה ---
+      // אם המשתמש הוא כבר PRO, לא בודקים קודים בכלל.
       if (user.plan === 'PRO') {
          return new Response(JSON.stringify(user));
       }
 
-      // אם הוא עדיין FREE ומנסה להשתדרג עכשיו עם קוד
+      // אם הוא עדיין FREE ומנסה להשתדרג
       if (promoCode) {
         try {
-          const codeRecord = await env.DB.prepare("SELECT * FROM promo_codes WHERE code = ? AND is_used = 0").bind(promoCode).first();
+          // שאילתה לחיפוש הקוד
+          const codeRecord = await env.DB.prepare("SELECT * FROM promo_codes WHERE code = ?").bind(promoCode).first();
           
-          if (codeRecord) {
-            // שדרוג המשתמש
-            await env.DB.prepare("UPDATE users SET plan = 'PRO', token_limit = 1000000 WHERE email = ?").bind(email).run();
-            // סימון הקוד כמשומש
-            await env.DB.prepare("UPDATE promo_codes SET is_used = 1 WHERE code = ?").bind(promoCode).run();
-            
-            // עדכון האובייקט המקומי
-            user.plan = 'PRO';
-            user.token_limit = 1000000;
-          } else {
-             return new Response(JSON.stringify({ error: "קוד ההטבה אינו תקין או שכבר נוצל" }), { status: 400 });
+          if (!codeRecord) {
+              return new Response(JSON.stringify({ error: "קוד ההטבה לא נמצא במערכת" }), { status: 400 });
           }
+
+          if (codeRecord.is_used === 1) {
+              return new Response(JSON.stringify({ error: "קוד ההטבה הזה כבר נוצל" }), { status: 400 });
+          }
+
+          // הקוד תקין ופנוי! ביצוע השדרוג
+          await env.DB.prepare("UPDATE users SET plan = 'PRO', token_limit = 1000000 WHERE email = ?").bind(email).run();
+          await env.DB.prepare("UPDATE promo_codes SET is_used = 1 WHERE code = ?").bind(promoCode).run();
+            
+          user.plan = 'PRO';
+          user.token_limit = 1000000;
         } catch (e) {
-          // מתעלמים משגיאות טבלה (אם הטבלה לא קיימת למשל)
+            return new Response(JSON.stringify({ error: "שגיאת בסיס נתונים: " + e.message }), { status: 500 });
         }
       }
 
@@ -56,19 +68,26 @@ export async function onRequestPost(context) {
     let plan = 'FREE';
     let tokenLimit = 5000;
 
-    // בדיקת קוד הטבה למשתמש חדש
     if (promoCode) {
       try {
-        const codeRecord = await env.DB.prepare("SELECT * FROM promo_codes WHERE code = ? AND is_used = 0").bind(promoCode).first();
+        const codeRecord = await env.DB.prepare("SELECT * FROM promo_codes WHERE code = ?").bind(promoCode).first();
         
-        if (codeRecord) {
-          plan = 'PRO';
-          tokenLimit = 1000000;
-          await env.DB.prepare("UPDATE promo_codes SET is_used = 1 WHERE code = ?").bind(promoCode).run();
-        } else {
-           return new Response(JSON.stringify({ error: "קוד ההטבה שגוי או שכבר נוצל" }), { status: 400 });
+        if (!codeRecord) {
+             return new Response(JSON.stringify({ error: "קוד ההטבה לא נמצא" }), { status: 400 });
         }
-      } catch (e) {}
+        if (codeRecord.is_used === 1) {
+             return new Response(JSON.stringify({ error: "קוד ההטבה הזה כבר נוצל" }), { status: 400 });
+        }
+
+        // קוד תקין
+        plan = 'PRO';
+        tokenLimit = 1000000;
+        await env.DB.prepare("UPDATE promo_codes SET is_used = 1 WHERE code = ?").bind(promoCode).run();
+
+      } catch (e) {
+         // אם יש שגיאה בקוד, נמשיך כמשתמש חינם? לא, עדיף להודיע למשתמש.
+         return new Response(JSON.stringify({ error: "שגיאה בבדיקת הקוד" }), { status: 400 });
+      }
     }
 
     if (!password || password.length < 4) {
