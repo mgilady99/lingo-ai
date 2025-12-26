@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
-import { Mic, Headphones, ChevronRight, ExternalLink, ShieldCheck, Settings, KeyRound, ArrowRight } from 'lucide-react';
+import { Mic, Headphones, ChevronRight, ExternalLink, ShieldCheck, Settings, KeyRound, ArrowRight, RefreshCw } from 'lucide-react';
 import { ConnectionStatus, SUPPORTED_LANGUAGES, SCENARIOS, Language, PracticeScenario } from './types';
 import { decode, decodeAudioData, createPcmBlob } from './services/audioService';
 import Avatar from './components/Avatar';
@@ -9,41 +9,28 @@ import Login from './components/Login';
 import Pricing from './components/Pricing';
 import Admin from './components/Admin';
 
-// --- רכיבים פנימיים לשחזור סיסמה ---
+// --- רכיבים פנימיים ---
 
 const ForgotPasswordView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [email, setEmail] = useState('');
-  
   const handleSubmit = async () => {
     if(!email) return;
     try {
         const res = await fetch('/api/forgot-password', {
-            method: 'POST', 
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email })
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email })
         });
         const data = await res.json();
-        
-        if(data.devLink) {
-            const link = window.location.origin + data.devLink;
-            prompt("העתק את הלינק הזה (במציאות זה נשלח למייל):", link);
-        } else {
-            alert(data.message || "נשלח מייל שחזור");
-        }
-    } catch (e) {
-        alert("שגיאת תקשורת");
-    }
+        if(data.devLink) prompt("העתק לינק (הדמיה):", window.location.origin + data.devLink);
+        else alert(data.message || "נשלח מייל");
+    } catch (e) { alert("תקלה"); }
   };
-
   return (
     <div className="flex h-screen items-center justify-center bg-[#0f172a] rtl text-white font-['Inter']">
         <div className="w-full max-w-sm p-8 bg-[#1e293b] rounded-3xl border border-white/10 text-center shadow-2xl">
             <h2 className="text-2xl font-bold mb-4 flex items-center justify-center gap-2"><KeyRound className="text-indigo-500"/> שחזור סיסמה</h2>
-            <p className="text-slate-400 mb-6 text-sm">הכנס את האימייל שלך ונשלח לך קישור לאיפוס</p>
-            <input className="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-3 mb-4 text-center text-white outline-none focus:border-indigo-500" 
-                   placeholder="אימייל" value={email} onChange={e => setEmail(e.target.value)} />
-            <button onClick={handleSubmit} className="w-full bg-indigo-600 hover:bg-indigo-500 py-3 rounded-xl font-bold mb-4 transition-all">שלח קישור</button>
-            <button onClick={onBack} className="text-slate-500 text-sm hover:text-white">חזרה לכניסה</button>
+            <input className="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-3 mb-4 text-center text-white" placeholder="אימייל" value={email} onChange={e => setEmail(e.target.value)} />
+            <button onClick={handleSubmit} className="w-full bg-indigo-600 py-3 rounded-xl font-bold mb-4">שלח קישור</button>
+            <button onClick={onBack} className="text-slate-500 text-sm">חזרה</button>
         </div>
     </div>
   );
@@ -52,56 +39,18 @@ const ForgotPasswordView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 const ResetPasswordView: React.FC<{ token: string, onSuccess: () => void }> = ({ token, onSuccess }) => {
     const [pass, setPass] = useState('');
     const handleReset = async () => {
-        try {
-            const res = await fetch('/api/reset-password', {
-                method: 'POST', 
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ token, newPassword: pass })
-            });
-            if(res.ok) { 
-                alert('הסיסמה שונתה בהצלחה! התחבר מחדש.'); 
-                onSuccess(); 
-            } else { 
-                alert('שגיאה באיפוס או שהקישור פג תוקף'); 
-            }
-        } catch (e) {
-            alert("שגיאת תקשורת");
-        }
+        const res = await fetch('/api/reset-password', { method: 'POST', body: JSON.stringify({ token, newPassword: pass }) });
+        if(res.ok) { alert('סיסמה שונתה!'); onSuccess(); } else alert('שגיאה');
     };
     return (
         <div className="flex h-screen items-center justify-center bg-[#0f172a] rtl text-white font-['Inter']">
             <div className="w-full max-w-sm p-8 bg-[#1e293b] rounded-3xl border border-white/10 text-center shadow-2xl">
-                <h2 className="text-2xl font-bold mb-4">יצירת סיסמה חדשה</h2>
-                <input type="password" className="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-3 mb-4 text-center text-white outline-none focus:border-indigo-500" 
-                       placeholder="סיסמה חדשה" value={pass} onChange={e => setPass(e.target.value)} />
-                <button onClick={handleReset} className="w-full bg-green-600 hover:bg-green-500 py-3 rounded-xl font-bold transition-all">עדכן סיסמה</button>
+                <h2 className="text-2xl font-bold mb-4">סיסמה חדשה</h2>
+                <input type="password" className="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-3 mb-4 text-center text-white" placeholder="סיסמה חדשה" value={pass} onChange={e => setPass(e.target.value)} />
+                <button onClick={handleReset} className="w-full bg-green-600 py-3 rounded-xl font-bold">עדכן</button>
             </div>
         </div>
     );
-};
-
-// --- פונקציות עזר גלובליות ---
-
-const updateMetaTag = (name: string, content: string) => {
-  if (!content) return;
-  let tag = document.querySelector(`meta[name="${name}"]`);
-  if (!tag) {
-    tag = document.createElement('meta');
-    tag.setAttribute('name', name);
-    document.head.appendChild(tag);
-  }
-  tag.setAttribute('content', content);
-};
-
-const injectGoogleAnalytics = (gaId: string) => {
-  if (!gaId || document.getElementById('ga-script')) return;
-  const script1 = document.createElement('script');
-  script1.id = 'ga-script'; script1.async = true;
-  script1.src = `https://www.googletagmanager.com/gtag/js?id=${gaId}`;
-  document.head.appendChild(script1);
-  const script2 = document.createElement('script');
-  script2.innerHTML = `window.dataLayer = window.dataLayer || []; function gtag(){dataLayer.push(arguments);} gtag('js', new Date()); gtag('config', '${gaId}');`;
-  document.head.appendChild(script2);
 };
 
 // --- האפליקציה הראשית ---
@@ -125,50 +74,58 @@ const App: React.FC = () => {
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const nextStartTimeRef = useRef(0);
 
-  // טעינה ראשונית
+  // --- לוגיקת טעינה חכמה ---
   useEffect(() => {
+    // 1. פרמטרים של URL
     const params = new URLSearchParams(window.location.search);
     const token = params.get('token');
-    const viewParam = params.get('view');
-    
-    if (viewParam === 'RESET' && token) {
-        setResetToken(token);
-        setView('RESET');
-        window.history.replaceState({}, document.title, "/");
-        return;
+    if (params.get('view') === 'RESET' && token) {
+        setResetToken(token); setView('RESET'); window.history.replaceState({}, document.title, "/"); return;
     }
 
-    const savedUser = localStorage.getItem('lingolive_user');
-    if (savedUser) {
+    // 2. בדיקת זיכרון + רענון שקט מהשרת
+    const savedUserStr = localStorage.getItem('lingolive_user');
+    if (savedUserStr) {
       try {
-        const user = JSON.parse(savedUser);
-        handleLoginSuccess(user, false);
-      } catch (e) {
-        localStorage.removeItem('lingolive_user');
-      }
+        const localUser = JSON.parse(savedUserStr);
+        // קודם כל טוענים מה שיש כדי שהמשתמש יראה משהו מיד
+        handleLoginSuccess(localUser, false);
+
+        // במקביל: בודקים מול השרת אם משהו השתנה (למשל, אם הוא שודרג ל-PRO)
+        if (localUser.email && localUser.password) {
+             fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: localUser.email, password: localUser.password })
+             })
+             .then(res => res.json())
+             .then(serverUser => {
+                 if (serverUser.email) {
+                     // עדכון הנתונים עם מה שהגיע מהשרת (הכי מעודכן)
+                     console.log("Silent refresh success:", serverUser);
+                     handleLoginSuccess(serverUser, true);
+                 }
+             })
+             .catch(err => console.log("Silent refresh failed", err));
+        }
+      } catch (e) { localStorage.removeItem('lingolive_user'); }
     }
 
-    fetch('/api/admin/settings')
-      .then(res => res.json())
-      .then(data => {
+    // 3. הגדרות ופרסומות
+    fetch('/api/admin/settings').then(res => res.json()).then(data => {
         if(data.ads) setAds(data.ads);
         if(data.settings) {
-          const getVal = (k: string) => data.settings.find((s: any) => s.key === k)?.value;
-          const title = getVal('seo_title');
-          if(title) document.title = title;
-          updateMetaTag('description', getVal('seo_description'));
-          updateMetaTag('keywords', getVal('seo_keywords'));
-          updateMetaTag('google-site-verification', getVal('google_console_id'));
-          injectGoogleAnalytics(getVal('google_analytics_id'));
+            const getVal = (k: string) => data.settings.find((s: any) => s.key === k)?.value;
+            if(getVal('seo_title')) document.title = getVal('seo_title');
         }
-      }).catch(() => {});
+    }).catch(() => {});
   }, []);
 
   const handleLoginSuccess = (user: any, shouldSave = true) => {
+    // מנהל נכנס תמיד
     if (user.email === 'mgilady@gmail.com') {
         const adminUser = { ...user, role: 'ADMIN', plan: 'PRO' };
-        setUserData(adminUser);
-        setView('APP');
+        setUserData(adminUser); setView('APP');
         if (shouldSave) localStorage.setItem('lingolive_user', JSON.stringify(adminUser));
         return; 
     }
@@ -176,10 +133,11 @@ const App: React.FC = () => {
     setUserData(user);
     if (shouldSave) localStorage.setItem('lingolive_user', JSON.stringify(user));
 
+    // לוגיקת הניתוב המעודכנת
     if (user.role === 'ADMIN') setView('APP');
-    else if (user.plan && user.plan !== 'FREE') setView('APP');
-    else if (user.tokens_used > 0) setView('APP');
-    else setView('PRICING');
+    else if (user.plan === 'PRO') setView('APP'); // אם הוא פרו - כנס מיד
+    else if (user.tokens_used > 0) setView('APP'); // אם הוא כבר השתמש - כנס
+    else setView('PRICING'); // רק אם הוא חינם לגמרי וחדש - דף מחירים
   };
 
   const handleLogout = () => {
@@ -189,6 +147,7 @@ const App: React.FC = () => {
     if (activeSessionRef.current) stopConversation();
   };
 
+  // --- אודיו ו-Gemini ---
   const stopConversation = useCallback(() => {
     if (activeSessionRef.current) { try { activeSessionRef.current.close(); } catch (e) {} activeSessionRef.current = null; }
     if (micStreamRef.current) { micStreamRef.current.getTracks().forEach(t => t.stop()); micStreamRef.current = null; }
@@ -211,9 +170,7 @@ const App: React.FC = () => {
       micStreamRef.current = stream;
       const outputCtx = outputAudioContextRef.current;
       const outputNode = outputCtx.createGain(); outputNode.connect(outputCtx.destination);
-      
       const sysInst = `ACT AS A PURE INTERPRETER. Translate between ${nativeLang.name} and ${targetLang.name}. Scenario: ${selectedScenario.title}. No small talk.`;
-      
       const sessionPromise = ai.live.connect({
         model: 'gemini-2.0-flash-exp',
         callbacks: {
@@ -251,7 +208,15 @@ const App: React.FC = () => {
   if (view === 'FORGOT') return <ForgotPasswordView onBack={() => setView('LOGIN')} />;
   if (view === 'RESET') return <ResetPasswordView token={resetToken} onSuccess={() => setView('LOGIN')} />;
   if (view === 'LOGIN') return <Login onLoginSuccess={handleLoginSuccess} onForgotPassword={() => setView('FORGOT')} />;
-  if (view === 'PRICING') return <Pricing onPlanSelect={(plan) => { if(userData) setUserData({...userData, plan}); setView('APP'); }} />;
+  
+  // כאן התיקון: גם אם מגיעים ל-Pricing, נוסיף כפתור יציאה למקרה שנתקעים
+  if (view === 'PRICING') return (
+      <div className="relative">
+          <Pricing onPlanSelect={(plan) => { if(userData) setUserData({...userData, plan}); setView('APP'); }} />
+          <button onClick={handleLogout} className="fixed top-4 left-4 z-50 bg-slate-800 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg hover:bg-red-500">התנתק / החלף משתמש</button>
+      </div>
+  );
+
   if (view === 'ADMIN') return <Admin onBack={() => setView('APP')} />;
 
   return (
