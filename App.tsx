@@ -1,6 +1,7 @@
+
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
-import { Mic, Headphones, ChevronRight, ExternalLink, ShieldCheck, Settings, KeyRound, ArrowRight, RefreshCw } from 'lucide-react';
+import { Mic, Headphones, ChevronRight, ExternalLink, ShieldCheck, Settings, KeyRound, LogOut } from 'lucide-react';
 import { ConnectionStatus, SUPPORTED_LANGUAGES, SCENARIOS, Language, PracticeScenario } from './types';
 import { decode, decodeAudioData, createPcmBlob } from './services/audioService';
 import Avatar from './components/Avatar';
@@ -28,7 +29,7 @@ const ForgotPasswordView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     <div className="flex h-screen items-center justify-center bg-[#0f172a] rtl text-white font-['Inter']">
         <div className="w-full max-w-sm p-8 bg-[#1e293b] rounded-3xl border border-white/10 text-center shadow-2xl">
             <h2 className="text-2xl font-bold mb-4 flex items-center justify-center gap-2"><KeyRound className="text-indigo-500"/> שחזור סיסמה</h2>
-            <input className="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-3 mb-4 text-center text-white" placeholder="אימייל" value={email} onChange={e => setEmail(e.target.value)} />
+            <input className="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-3 mb-4 text-center text-white outline-none" placeholder="אימייל" value={email} onChange={e => setEmail(e.target.value)} />
             <button onClick={handleSubmit} className="w-full bg-indigo-600 py-3 rounded-xl font-bold mb-4">שלח קישור</button>
             <button onClick={onBack} className="text-slate-500 text-sm">חזרה</button>
         </div>
@@ -74,74 +75,78 @@ const App: React.FC = () => {
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const nextStartTimeRef = useRef(0);
 
-  // --- לוגיקת טעינה חכמה ---
+  // --- טעינה ראשונית וזיכרון ---
   useEffect(() => {
-    // 1. פרמטרים של URL
+    // 1. טיפול באיפוס סיסמה
     const params = new URLSearchParams(window.location.search);
     const token = params.get('token');
     if (params.get('view') === 'RESET' && token) {
         setResetToken(token); setView('RESET'); window.history.replaceState({}, document.title, "/"); return;
     }
 
-    // 2. בדיקת זיכרון + רענון שקט מהשרת
+    // 2. בדיקת זיכרון מקומי (LocalStorage)
     const savedUserStr = localStorage.getItem('lingolive_user');
     if (savedUserStr) {
       try {
         const localUser = JSON.parse(savedUserStr);
-        // קודם כל טוענים מה שיש כדי שהמשתמש יראה משהו מיד
-        handleLoginSuccess(localUser, false);
-
-        // במקביל: בודקים מול השרת אם משהו השתנה (למשל, אם הוא שודרג ל-PRO)
-        if (localUser.email && localUser.password) {
-             fetch('/api/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: localUser.email, password: localUser.password })
-             })
-             .then(res => res.json())
-             .then(serverUser => {
-                 if (serverUser.email) {
-                     // עדכון הנתונים עם מה שהגיע מהשרת (הכי מעודכן)
-                     console.log("Silent refresh success:", serverUser);
-                     handleLoginSuccess(serverUser, true);
-                 }
-             })
-             .catch(err => console.log("Silent refresh failed", err));
+        if (localUser && localUser.email) {
+            console.log("Restoring user from memory:", localUser);
+            // שחזור מיידי ללא בדיקת שרת
+            handleLoginSuccess(localUser, false);
         }
       } catch (e) { localStorage.removeItem('lingolive_user'); }
     }
 
-    // 3. הגדרות ופרסומות
+    // 3. טעינת הגדרות כלליות
     fetch('/api/admin/settings').then(res => res.json()).then(data => {
         if(data.ads) setAds(data.ads);
         if(data.settings) {
             const getVal = (k: string) => data.settings.find((s: any) => s.key === k)?.value;
-            if(getVal('seo_title')) document.title = getVal('seo_title');
+            const t = getVal('seo_title'); if(t) document.title = t;
+            // הזרקת סקריפטים אם יש
+            const gaId = getVal('google_analytics_id');
+            if(gaId && !document.getElementById('ga-script')) {
+                const s1 = document.createElement('script'); s1.id='ga-script'; s1.async=true; s1.src=`https://www.googletagmanager.com/gtag/js?id=${gaId}`;
+                document.head.appendChild(s1);
+                const s2 = document.createElement('script'); s2.innerHTML=`window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','${gaId}');`;
+                document.head.appendChild(s2);
+            }
         }
     }).catch(() => {});
   }, []);
 
   const handleLoginSuccess = (user: any, shouldSave = true) => {
-    // מנהל נכנס תמיד
-    if (user.email === 'mgilady@gmail.com') {
-        const adminUser = { ...user, role: 'ADMIN', plan: 'PRO' };
-        setUserData(adminUser); setView('APP');
-        if (shouldSave) localStorage.setItem('lingolive_user', JSON.stringify(adminUser));
-        return; 
+    // שמירה בזיכרון המקומי
+    if (shouldSave) {
+        localStorage.setItem('lingolive_user', JSON.stringify(user));
+    }
+    setUserData(user);
+
+    // --- לוגיקת הניתוב המוחלטת ---
+    // 1. מנהל נכנס תמיד
+    if (user.role === 'ADMIN' || user.email === 'mgilady@gmail.com') {
+        setView('APP');
+        return;
+    }
+    
+    // 2. מנוי PRO נכנס תמיד
+    if (user.plan === 'PRO' || user.plan === 'Pro') {
+        setView('APP');
+        return;
     }
 
-    setUserData(user);
-    if (shouldSave) localStorage.setItem('lingolive_user', JSON.stringify(user));
+    // 3. משתמש חינם שכבר התחיל להשתמש נכנס תמיד
+    if (user.tokens_used > 0) {
+        setView('APP');
+        return;
+    }
 
-    // לוגיקת הניתוב המעודכנת
-    if (user.role === 'ADMIN') setView('APP');
-    else if (user.plan === 'PRO') setView('APP'); // אם הוא פרו - כנס מיד
-    else if (user.tokens_used > 0) setView('APP'); // אם הוא כבר השתמש - כנס
-    else setView('PRICING'); // רק אם הוא חינם לגמרי וחדש - דף מחירים
+    // 4. רק משתמש חדש לגמרי וחינם הולך למחירים
+    setView('PRICING');
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('lingolive_user');
+    localStorage.removeItem('lingolive_user'); // מחיקת הזיכרון
     setUserData(null);
     setView('LOGIN');
     if (activeSessionRef.current) stopConversation();
@@ -209,11 +214,12 @@ const App: React.FC = () => {
   if (view === 'RESET') return <ResetPasswordView token={resetToken} onSuccess={() => setView('LOGIN')} />;
   if (view === 'LOGIN') return <Login onLoginSuccess={handleLoginSuccess} onForgotPassword={() => setView('FORGOT')} />;
   
-  // כאן התיקון: גם אם מגיעים ל-Pricing, נוסיף כפתור יציאה למקרה שנתקעים
   if (view === 'PRICING') return (
       <div className="relative">
           <Pricing onPlanSelect={(plan) => { if(userData) setUserData({...userData, plan}); setView('APP'); }} />
-          <button onClick={handleLogout} className="fixed top-4 left-4 z-50 bg-slate-800 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg hover:bg-red-500">התנתק / החלף משתמש</button>
+          <button onClick={handleLogout} className="fixed top-4 left-4 z-50 bg-slate-800 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg hover:bg-red-500 flex items-center gap-2">
+            <LogOut size={14}/> יציאה / החלף משתמש
+          </button>
       </div>
   );
 
