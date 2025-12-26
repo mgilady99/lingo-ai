@@ -1,18 +1,12 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
+// https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
-  define: {
-    'process.env.API_KEY': JSON.stringify(process.env.API_KEY)
-  },
   build: {
-    target: 'esnext',
-    outDir: 'dist',
-    rollupOptions: {
-      input: {
-        main: './index.html'
-      }
-    }
-  }
+    // מעלה את רף האזהרה ל-1000KB (במקום 500KB)
+    // זה יעלים את האזהרה בגלל שהקובץ שלנו הוא רק 505KB
+    chunkSizeWarningLimit: 1000, 
+  },
 });
