@@ -7,8 +7,8 @@ import Avatar from './components/Avatar';
 import AudioVisualizer from './components/AudioVisualizer';
 
 const uiTranslations: Record<string, any> = {
-  'en-US': { title: 'LingoLive Pro', native: 'Native Language', target: 'Learning Language', start: 'START', stop: 'STOP', adSpace: 'ADVERTISING SPACE', scenarios: { simultaneous: 'LIVE TRANSLATE', translator: 'Simultaneous Translation', casual: 'CHAT', learn: 'LEARN' } },
-  'he-IL': { title: 'לינגו-לייב פרו', native: 'שפת אם', target: 'שפה נלמדת', start: 'התחל', stop: 'הפסק', adSpace: 'מרחב פרסום', scenarios: { simultaneous: 'תרגום חי', translator: 'תרגום סימולטני', casual: 'צ׳אט', learn: 'לימוד שפה' } },
+  'en-US': { title: 'LingoLive Pro', native: 'Native Language', target: 'Translation/Learning', start: 'START', stop: 'STOP', adSpace: 'ADVERTISING SPACE', scenarios: { simultaneous: 'LIVE TRANSLATE', translator: 'Simultaneous Translation', casual: 'CHAT', learn: 'LEARN' } },
+  'he-IL': { title: 'לינגו-לייב פרו', native: 'שפת אם', target: 'שפת תרגום/למידה', start: 'התחל', stop: 'הפסק', adSpace: 'מרחב פרסום', scenarios: { simultaneous: 'תרגום חי', translator: 'תרגום סימולטני', casual: 'צ׳אט', learn: 'לימוד שפה' } },
 };
 
 const App: React.FC = () => {
@@ -82,21 +82,27 @@ const App: React.FC = () => {
 
       const nName = nativeLang.name;
       const tName = targetLang.name;
+      
+      // הנחיות משופרות לדיוק גבוה ותרגום איכותי
       let sysInst = "";
-
       if (selectedScenario.id === 'simultaneous') {
-        sysInst = `TWO-WAY INTERPRETER: ${nName} <-> ${tName}. Translate dialogue immediately. Do not ask questions. Output ONLY the translation.`;
+        sysInst = `You are an expert high-fidelity interpreter between ${nName} and ${tName}. 
+        Your goal is ACCURACY and natural flow. 
+        - If you hear ${nName}, translate the meaning perfectly into ${tName}. 
+        - If you hear ${tName}, translate the meaning perfectly into ${nName}. 
+        Maintain the tone and correct grammar of the target language. Output ONLY the translation.`;
       } else if (selectedScenario.id === 'translator') {
-        // מודול תרגום סימולטני משופר - הזרמה רציפה
-        sysInst = `ACT AS A PROFESSIONAL BROADCAST INTERPRETER. 
-        Target Language: ${nName}. 
-        Listen to the source audio and translate into ${nName} IN A CONTINUOUS FLOW. 
-        Do NOT wait for full sentences. Use short, clear phrases to maintain zero lag. 
-        Do NOT repeat the source. Do NOT pause. Just stream the translation into ${nName}.`;
+        sysInst = `Professional Simultaneous Lecture Interpreter. 
+        Source: Any audible language. Target: ${nName}. 
+        Translate with high accuracy. Do not translate word-for-word; translate the full meaning in a steady stream. 
+        Focus on being a natural-sounding ${nName} voice.`;
       } else if (selectedScenario.id === 'casual') {
-        sysInst = `Speak ONLY in ${tName}. Friendly and brief.`;
+        sysInst = `You are a native speaker of ${tName}. Engage in a natural conversation. 
+        Keep your responses concise but meaningful. Do NOT use ${nName} at all.`;
       } else if (selectedScenario.id === 'learn') {
-        sysInst = `Tutor in ${tName}. Correct errors in [brackets] after your reply.`;
+        sysInst = `You are a helpful language tutor for ${tName}. 
+        Respond in ${tName}. After your response, provide a brief correction in [brackets] 
+        focusing on grammar, syntax, or better word choices in ${tName}.`;
       }
 
       const sessionPromise = ai.live.connect({
@@ -129,13 +135,13 @@ const App: React.FC = () => {
               sourcesRef.current.add(source);
             }
           },
-          onerror: () => { setError('Error'); stopConversation(); },
+          onerror: () => { setError('Connection Error'); stopConversation(); },
           onclose: () => setStatus(ConnectionStatus.DISCONNECTED)
         },
         config: { 
           responseModalities: [Modality.AUDIO], 
           systemInstruction: sysInst,
-          generationConfig: { temperature: 0.2 },
+          generationConfig: { temperature: 0.1 }, // טמפרטורה נמוכה לדיוק מקסימלי
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } } }
         }
       });
@@ -153,7 +159,7 @@ const App: React.FC = () => {
           <div className="flex flex-col">
             <span className="font-black text-sm uppercase">{ui.title}</span>
             <span className={`text-[10px] font-black uppercase ${status === ConnectionStatus.CONNECTED ? 'text-emerald-400' : 'text-slate-400'}`}>
-              {status === ConnectionStatus.CONNECTED ? ui.stop : status}
+              {status === ConnectionStatus.CONNECTED ? 'LIVE' : status}
             </span>
           </div>
         </div>
@@ -205,7 +211,7 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        {/* מרחב הפרסום */}
+        {/* מרחב הפרסום - מאיר גלעדי */}
         <div className="flex-1 bg-slate-950 p-6 overflow-hidden flex flex-col gap-6">
           <div className="grid grid-cols-2 grid-rows-2 flex-1 gap-6">
              <div className="bg-slate-900 rounded-[3rem] border border-white/5 p-8 flex flex-col items-center justify-center text-center shadow-2xl">
