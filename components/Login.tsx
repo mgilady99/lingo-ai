@@ -19,7 +19,6 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onForgotPassword, nativeL
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  // כיוון לפי שפה
   const dir = nativeLang.code === 'he-IL' || nativeLang.code === 'ar-SA' ? 'rtl' : 'ltr';
 
   const handleLogin = async () => {
@@ -52,9 +51,10 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onForgotPassword, nativeL
 
   return (
     <div className={`flex h-screen items-center justify-center bg-[#0f172a] font-['Inter'] text-white ${dir}`} dir={dir}>
+      {/* החזרתי את הקונטיינר לגודל סביר */}
       <div className="w-full max-w-sm p-8 bg-[#1e293b] rounded-3xl border border-white/10 shadow-2xl text-center relative">
         
-        {/* בחירת שפה - כפתור עליון */}
+        {/* בחירת שפה */}
         <div className="absolute top-4 left-4 z-10">
             <div className="relative group">
                 <button className="text-slate-400 hover:text-white flex items-center gap-1 text-xs font-bold">
@@ -108,9 +108,10 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onForgotPassword, nativeL
             </div>
           )}
 
+          {/* כפתור בגודל רגיל (py-4) אבל טקסט גדול (text-2xl) */}
           <button 
             onClick={handleLogin} disabled={isLoading}
-            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black py-4 rounded-xl transition-all shadow-lg active:scale-95 text-xl mt-4 border border-indigo-400/30"
+            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black py-4 rounded-xl transition-all shadow-lg active:scale-95 text-2xl mt-4 border border-indigo-400/30"
           >
             {isLoading ? "..." : t('login_btn')}
           </button>
