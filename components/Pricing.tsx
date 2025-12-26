@@ -167,7 +167,13 @@ const Pricing: React.FC<PricingProps> = ({ onPlanSelect, userEmail }) => {
             <Ticket size={14} className="text-indigo-400"/> יש לך קוד?
         </label>
         <div className="flex gap-2">
-            <input value={promoCode} onChange={(e) => setPromoCode(e.target.value)} placeholder="home11111" className="flex-1 bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-indigo-500 text-center"/>
+            <input 
+              value={promoCode} 
+              onChange={(e) => setPromoCode(e.target.value)} 
+              // --- הנה השינוי שביקשת ---
+              placeholder="קוד ההטבה שלך כאן" 
+              className="flex-1 bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-indigo-500 text-center"
+            />
             <button onClick={handlePromoCode} disabled={loading} className="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg font-bold text-white text-sm transition-all disabled:opacity-50">{loading ? '...' : 'הפעל'}</button>
         </div>
       </div>
