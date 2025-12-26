@@ -11,8 +11,8 @@ const Admin: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     seo_title: '',
     seo_description: '',
     seo_keywords: '',
-    google_analytics_id: '', // למשל G-XXXXXXXX
-    google_console_id: ''    // קוד האימות של גוגל
+    google_analytics_id: '',
+    google_console_id: ''
   });
 
   // טעינת נתונים
@@ -21,7 +21,6 @@ const Admin: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       setAds(data.ads || []);
       if (data.stats) setStats(data.stats);
       
-      // טעינת הגדרות קיימות לתוך ה-State
       const newSettings = { ...seoSettings };
       data.settings?.forEach((s: any) => {
         if (Object.keys(newSettings).includes(s.key)) {
@@ -33,7 +32,6 @@ const Admin: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     });
   }, []);
 
-  // שמירה גנרית של הגדרות
   const saveSetting = async (key: string, value: string) => {
     await fetch('/api/admin/settings', {
       method: 'POST',
@@ -42,7 +40,6 @@ const Admin: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   };
 
   const saveAllSEO = async () => {
-    // שומר את כל השדות בלולאה
     for (const [key, value] of Object.entries(seoSettings)) {
       await saveSetting(key, value);
     }
@@ -67,7 +64,8 @@ const Admin: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   };
 
   return (
-    <div className="p-8 bg-slate-950 min-h-screen text-slate-200 rtl font-['Inter'] overflow-y-auto">
+    // התיקון נמצא בשורה הזו: h-screen overflow-y-auto
+    <div className="h-screen overflow-y-auto bg-slate-950 text-slate-200 rtl font-['Inter'] p-8 scrollbar-thin scrollbar-thumb-indigo-600 scrollbar-track-slate-900">
       <button onClick={onBack} className="mb-6 flex items-center gap-2 text-slate-400 hover:text-white font-bold transition-colors">
         <ArrowRight size={18}/> חזרה לאתר
       </button>
@@ -96,7 +94,7 @@ const Admin: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           </div>
 
           <div>
-            <label className="text-xs font-bold text-slate-500 block mb-1">תיאור האתר (Meta Description) - חשוב לגוגל</label>
+            <label className="text-xs font-bold text-slate-500 block mb-1">תיאור האתר (Meta Description)</label>
             <textarea 
               value={seoSettings.seo_description} 
               onChange={e => setSeoSettings({...seoSettings, seo_description: e.target.value})}
@@ -105,7 +103,7 @@ const Admin: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           </div>
 
           <div>
-            <label className="text-xs font-bold text-slate-500 block mb-1">מילות מפתח (Keywords) - מופרד בפסיקים</label>
+            <label className="text-xs font-bold text-slate-500 block mb-1">מילות מפתח (Keywords)</label>
             <input 
               value={seoSettings.seo_keywords} 
               onChange={e => setSeoSettings({...seoSettings, seo_keywords: e.target.value})}
@@ -153,7 +151,7 @@ const Admin: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       </div>
 
       {/* ניהול פרסומות */}
-      <section>
+      <section className="pb-20"> {/* הוספתי ריפוד למטה כדי שיהיה נוח לגלול עד הסוף */}
         <h2 className="text-xl font-bold mb-6 flex items-center gap-2"><ImageIcon size={20} className="text-emerald-400"/> ניהול פרסומות (סרגל צד)</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {[1, 2, 3, 4].map(id => {
