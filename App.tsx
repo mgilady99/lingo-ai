@@ -21,7 +21,6 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
 
-  // זיהוי שפת מכשיר אוטומטית לשדה שפת אם
   useEffect(() => {
     const sysLang = navigator.language.split('-')[0];
     const detected = SUPPORTED_LANGUAGES.find(l => l.code.startsWith(sysLang)) || SUPPORTED_LANGUAGES[1];
@@ -47,8 +46,14 @@ const App: React.FC = () => {
   }, []);
 
   const stopConversation = useCallback(() => {
-    if (activeSessionRef.current) { try { activeSessionRef.current.close(); } catch (e) {} activeSessionRef.current = null; }
-    if (micStreamRef.current) { micStreamRef.current.getTracks().forEach(t => t.stop()); micStreamRef.current = null; }
+    if (activeSessionRef.current) {
+      try { activeSessionRef.current.close(); } catch (e) {}
+      activeSessionRef.current = null;
+    }
+    if (micStreamRef.current) {
+      micStreamRef.current.getTracks().forEach(t => t.stop());
+      micStreamRef.current = null;
+    }
     sourcesRef.current.forEach(s => { try { s.stop(); } catch (e) {} });
     sourcesRef.current.clear();
     setStatus(ConnectionStatus.DISCONNECTED);
@@ -75,16 +80,25 @@ const App: React.FC = () => {
       const outputNode = outputCtx.createGain();
       outputNode.connect(outputCtx.destination);
 
-      // לוגיקה ממוקדת לשיפור מהירות במודולי שיחה
+      // --- הגדרות קשיחות למניעת שאלות מיותרות של המודל ---
+      const nName = nativeLang.name;
+      const tName = targetLang.name;
       let sysInst = "";
+
       if (selectedScenario.id === 'simultaneous') {
-        sysInst = `INTERPRETER: ${nativeLang.name} <-> ${targetLang.name}. Fast 2-way translation. No talk.`;
+        sysInst = `STRICT TRANSLATION DEVICE MODE. 
+        You are NOT an assistant. Do NOT ask "How can I help". 
+        Your ONLY job: 
+        1. If input is ${nName}, output ONLY ${tName}. 
+        2. If input is ${tName}, output ONLY ${nName}. 
+        3. Never speak ${nName} unless translating TO it. 
+        4. No greetings, no questions, no meta-talk. ONLY TRANSLATION.`;
       } else if (selectedScenario.id === 'translator') {
-        sysInst = `SIMULTANEOUS LECTURE MODE: Translate to ${nativeLang.name} instantly. Continuous output.`;
+        sysInst = `LECTURE TRANSLATOR. Translate everything you hear into ${nName} immediately. DO NOT speak or ask anything else. Continuous translation only.`;
       } else if (selectedScenario.id === 'casual') {
-        sysInst = `CHAT PARTNER: Speak ONLY ${targetLang.name}. Be very brief and fast. No corrections.`;
+        sysInst = `CHAT PARTNER. Speak ONLY in ${tName}. Do NOT ask "How can I help you today" in ${nName}. Just respond to the conversation in ${tName}.`;
       } else if (selectedScenario.id === 'learn') {
-        sysInst = `TUTOR: Speak ${targetLang.name}. Be brief. End with a very short correction in [].`;
+        sysInst = `LANGUAGE TEACHER. Speak in ${tName}. If user makes a mistake, respond in ${tName} and provide a correction in [brackets] at the end. Do NOT ask general help questions.`;
       }
 
       const sessionPromise = ai.live.connect({
@@ -117,24 +131,24 @@ const App: React.FC = () => {
               sourcesRef.current.add(source);
             }
           },
-          onerror: () => { setError('Error'); stopConversation(); },
+          onerror: () => { setError('Connection Error'); stopConversation(); },
           onclose: () => setStatus(ConnectionStatus.DISCONNECTED)
         },
         config: { 
           responseModalities: [Modality.AUDIO], 
           systemInstruction: sysInst,
-          generationConfig: { temperature: 0.2 }, // מהירות תגובה מקסימלית
+          generationConfig: { temperature: 0.1 },
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } } }
         }
       });
       activeSessionRef.current = await sessionPromise;
-    } catch (e) { setError('Error'); setStatus(ConnectionStatus.ERROR); }
+    } catch (e) { setError('Failed to start'); setStatus(ConnectionStatus.ERROR); }
   };
 
   if (hasKey === null) return <div className="h-screen bg-slate-950 flex items-center justify-center"><div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" /></div>;
 
   return (
-    <div className={`h-screen bg-slate-950 flex flex-col text-slate-200 overflow-hidden ${isRTL ? 'rtl' : 'ltr'}`}>
+    <div className={`h-screen bg-slate-950 flex flex-col text-slate-200 overflow-hidden font-['Inter'] ${isRTL ? 'rtl' : 'ltr'}`}>
       <header className="p-4 flex items-center justify-between bg-slate-900/60 border-b border-white/5 backdrop-blur-2xl z-50">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg"><Headphones size={20} /></div>
@@ -146,7 +160,7 @@ const App: React.FC = () => {
       </header>
 
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden">
-        <div className="w-full md:w-[480px] flex flex-col p-6 gap-6 bg-slate-900/30 border-r border-white/5 overflow-y-auto">
+        <div className="w-full md:w-[480px] flex flex-col p-6 gap-6 bg-slate-900/30 border-r border-white/5 overflow-y-auto scrollbar-thin">
           <div className="w-full bg-slate-900/90 rounded-[2rem] border border-white/10 p-5 flex flex-col gap-4 shadow-xl">
             <div className="flex items-center gap-2 bg-slate-800/40 p-2 rounded-[1.5rem]">
               <div className="flex-1 text-center">
@@ -165,36 +179,42 @@ const App: React.FC = () => {
             </div>
             
             <div className="grid grid-cols-2 gap-3">
-              {SCENARIOS.map(s => (
-                <button key={s.id} onClick={() => setSelectedScenario(s)} className={`py-10 px-2 rounded-3xl flex flex-col items-center gap-3 transition-all ${selectedScenario.id === s.id ? 'bg-indigo-600 text-white shadow-2xl scale-105' : 'bg-slate-800/40 text-slate-500'}`}>
-                  <span className="text-4xl">{s.icon}</span>
-                  <span className="font-black uppercase text-2xl text-center leading-none">
-                    {ui.scenarios[s.id as keyof typeof ui.scenarios] || s.title}
-                  </span>
-                </button>
-              ))}
+              {SCENARIOS.map(s => {
+                const label = ui.scenarios[s.id as keyof typeof ui.scenarios] || s.title;
+                return (
+                  <button key={s.id} onClick={() => setSelectedScenario(s)} className={`py-10 px-2 rounded-3xl flex flex-col items-center gap-3 transition-all ${selectedScenario.id === s.id ? 'bg-indigo-600 text-white shadow-2xl scale-105' : 'bg-slate-800/40 text-slate-500'}`}>
+                    <span className="text-4xl">{s.icon}</span>
+                    <span className="font-black uppercase text-2xl text-center leading-none tracking-tighter">
+                      {label}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
           <div className="flex flex-col items-center justify-center gap-6 py-4">
             <Avatar state={status !== ConnectionStatus.CONNECTED ? 'idle' : isSpeaking ? 'speaking' : isMuted ? 'thinking' : 'listening'} />
-            <button onClick={status === ConnectionStatus.CONNECTED ? stopConversation : startConversation} className="bg-indigo-600 px-12 py-6 rounded-full font-black text-2xl shadow-xl flex items-center gap-3 hover:bg-indigo-500 transition-all">
+            <button 
+              onClick={status === ConnectionStatus.CONNECTED ? stopConversation : startConversation} 
+              className={`px-12 py-6 rounded-full font-black text-2xl shadow-xl flex items-center gap-3 transition-all active:scale-95 ${status === 'CONNECTED' ? 'bg-red-500 hover:bg-red-600' : 'bg-indigo-600 hover:bg-indigo-500'}`}
+            >
               <Mic size={32} /> {status === ConnectionStatus.CONNECTED ? ui.stop : ui.start}
             </button>
             {(isSpeaking || (status === ConnectionStatus.CONNECTED && !isMuted)) && <AudioVisualizer isActive={true} color={isSpeaking ? "#6366f1" : "#10b981"} />}
           </div>
         </div>
 
-        {/* מרחב הפרסום - 4 משבצות */}
+        {/* מרחב הפרסום */}
         <div className="flex-1 bg-slate-950 p-6 overflow-hidden flex flex-col gap-6">
           <div className="grid grid-cols-2 grid-rows-2 flex-1 gap-6">
              <div className="bg-slate-900 rounded-[3rem] border border-white/5 p-8 flex flex-col items-center justify-center text-center shadow-2xl">
                 <div className="w-16 h-16 bg-indigo-600 rounded-full flex items-center justify-center mb-4 text-white font-black text-2xl">MG</div>
-                <h4 className="text-2xl font-black text-white mb-2">מאיר גלעדי</h4>
-                <p className="text-indigo-400 font-bold text-lg mb-4">מומחה לנדל"ן מסחרי</p>
+                <h4 className="text-3xl font-black text-white mb-2">מאיר גלעדי</h4>
+                <p className="text-indigo-400 font-bold text-xl mb-4">מומחה לנדל"ן מסחרי</p>
                 <div className="flex flex-col gap-2">
-                  <span className="text-slate-300 font-black text-xl tracking-widest">052-2530087</span>
-                  <a href="https://mgilady.wixsite.com/meirgilady" target="_blank" className="text-indigo-500 hover:text-white underline text-sm mt-2 flex items-center gap-1">אתר אינטרנט <ExternalLink size={12}/></a>
+                  <span className="text-slate-300 font-black text-2xl tracking-widest">052-2530087</span>
+                  <a href="https://mgilady.wixsite.com/meirgilady" target="_blank" className="text-indigo-500 hover:text-white underline text-lg mt-4 flex items-center gap-1 font-bold">לאתר האינטרנט <ExternalLink size={16}/></a>
                 </div>
              </div>
              {[1, 2, 3].map(i => (
