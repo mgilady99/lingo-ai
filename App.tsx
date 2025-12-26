@@ -135,10 +135,10 @@ const App: React.FC = () => {
     try {
       setStatus(ConnectionStatus.CONNECTING);
 
-      // --- הגדרת אודיו קריטית: 16000Hz למניעת בעיות תאימות ---
       if (!inputAudioContextRef.current) inputAudioContextRef.current = new AudioContext({ sampleRate: 16000 });
       if (!outputAudioContextRef.current) outputAudioContextRef.current = new AudioContext({ sampleRate: 24000 });
 
+      // הפעלת האודיו (חובה!)
       await inputAudioContextRef.current.resume();
       await outputAudioContextRef.current.resume();
 
@@ -148,14 +148,13 @@ const App: React.FC = () => {
       
       const outputCtx = outputAudioContextRef.current;
       const outputNode = outputCtx.createGain(); 
-      outputNode.gain.value = 1.5; // הגברה קלה
+      outputNode.gain.value = 1.5; 
       outputNode.connect(outputCtx.destination);
 
       const instructions = selectedScenario.systemInstruction
         .replace(/SOURCE_LANG/g, nativeLang.name)
         .replace(/TARGET_LANG/g, targetLang.name);
 
-      // חיבור ל-Gemini
       const sessionPromise = ai.live.connect({ 
         model: 'gemini-2.0-flash-exp', 
         config: { 
@@ -173,7 +172,7 @@ const App: React.FC = () => {
           const inputData = e.inputBuffer.getChannelData(0).slice();
           if (activeSessionRef.current) {
               const pcmData = createPcmBlob(inputData);
-              // שליחה במבנה שה-SDK מצפה לו בדיוק
+              // שליחה במבנה הנכון (זה פותר את ה-Unsupported blob type)
               activeSessionRef.current.sendRealtimeInput({
                   mimeType: "audio/pcm;rate=16000",
                   data: pcmData
@@ -207,7 +206,7 @@ const App: React.FC = () => {
                     sourcesRef.current.add(audioSource);
                 }
             }
-          } catch(e) { console.error("Session loop error:", e); }
+          } catch(e) { console.error("Session error:", e); }
       })();
 
       setStatus(ConnectionStatus.CONNECTED);
