@@ -134,6 +134,7 @@ const App: React.FC = () => {
       if (!inputAudioContextRef.current) inputAudioContextRef.current = new AudioContext({ sampleRate: 16000 });
       if (!outputAudioContextRef.current) outputAudioContextRef.current = new AudioContext({ sampleRate: 24000 });
 
+      // חובה להפעיל את האודיו מיד
       await inputAudioContextRef.current.resume();
       await outputAudioContextRef.current.resume();
 
@@ -143,14 +144,15 @@ const App: React.FC = () => {
       
       const outputCtx = outputAudioContextRef.current;
       const outputNode = outputCtx.createGain(); 
-      outputNode.gain.value = 1.5; 
+      outputNode.gain.value = 1.2; // עוצמה נוחה
       outputNode.connect(outputCtx.destination);
 
       const instructions = selectedScenario.systemInstruction
         .replace(/SOURCE_LANG/g, nativeLang.name)
         .replace(/TARGET_LANG/g, targetLang.name);
 
-      const sessionPromise = ai.live.connect({ 
+      // יצירת החיבור והמתנה לו (await קריטי!)
+      const session = await ai.live.connect({ 
         model: 'gemini-2.0-flash-exp', 
         config: { 
             responseModalities: [Modality.AUDIO], 
@@ -158,22 +160,21 @@ const App: React.FC = () => {
             speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } } }
         } 
       });
-      activeSessionRef.current = await sessionPromise;
+      
+      // שמירה ברפרנס רק אחרי שהחיבור הצליח
+      activeSessionRef.current = session;
       
       const source = inputAudioContextRef.current!.createMediaStreamSource(stream);
-      const scriptProcessor = inputAudioContextRef.current!.createScriptProcessor(2048, 1, 1);
+      const scriptProcessor = inputAudioContextRef.current!.createScriptProcessor(4096, 1, 1);
       
       scriptProcessor.onaudioprocess = (e) => {
           const inputData = e.inputBuffer.getChannelData(0).slice();
           if (activeSessionRef.current) {
               const pcmData = createPcmBlob(inputData);
-              // --- התיקון הקריטי: עטיפה בתוך inlineData ---
-              // זה מונע את השגיאה Unsupported blob type
+              // שליחה במבנה הנכון לגוגל: אובייקט בודד עם mimeType ו-data
               activeSessionRef.current.sendRealtimeInput([{
-                  inlineData: {
-                      mimeType: "audio/pcm;rate=16000",
-                      data: pcmData
-                  }
+                  mimeType: "audio/pcm;rate=16000",
+                  data: pcmData
               }]);
           }
       };
@@ -181,8 +182,12 @@ const App: React.FC = () => {
       source.connect(scriptProcessor); 
       scriptProcessor.connect(inputAudioContextRef.current!.destination);
 
+      // לולאת ההאזנה - עטופה ב-try/catch כדי לא לקרוס
       (async () => {
           try {
+            // הוספת בדיקה ש-current קיים לפני ה-listen
+            if (!activeSessionRef.current) return;
+
             for await (const msg of activeSessionRef.current.listen()) {
                 const audioData = msg.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
                 if (audioData) {
@@ -204,14 +209,18 @@ const App: React.FC = () => {
                     sourcesRef.current.add(audioSource);
                 }
             }
-          } catch(e) { console.error("Session error:", e); }
+          } catch(e) { 
+              console.error("Session loop terminated:", e);
+              // במקרה של ניתוק, מנסים לנקות
+              stopConversation();
+          }
       })();
 
       setStatus(ConnectionStatus.CONNECTED);
     } catch (e) { 
         console.error("Connection failed:", e);
         setStatus(ConnectionStatus.DISCONNECTED); 
-        alert("תקלה בהתחברות. ודא שהמיקרופון מאושר."); 
+        alert("תקלה בהתחברות. ודא שהמיקרופון מחובר ומאושר."); 
     }
   };
 
