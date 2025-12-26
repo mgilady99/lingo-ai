@@ -8,7 +8,7 @@ import AudioVisualizer from './components/AudioVisualizer';
 
 const uiTranslations: Record<string, any> = {
   'en-US': { title: 'LingoLive Pro', native: 'Native Language', target: 'Learning Language', start: 'START', stop: 'STOP', adSpace: 'ADVERTISING SPACE', scenarios: { simultaneous: 'LIVE TRANSLATE', translator: 'Simultaneous Translation', casual: 'CHAT', learn: 'LEARN' } },
-  'he-IL': { title: 'לינגו-לייב פרו', native: 'שפת אם', target: 'שפה נלמדת', start: 'התחל', stop: 'עצור', adSpace: 'מרחב פרסום', scenarios: { simultaneous: 'תרגום חי', translator: 'תרגום סימולטני', casual: 'צ׳אט', learn: 'לימוד שפה' } },
+  'he-IL': { title: 'לינגו-לייב פרו', native: 'שפת אם', target: 'שפה נלמדת', start: 'התחל', stop: 'הפסק', adSpace: 'מרחב פרסום', scenarios: { simultaneous: 'תרגום חי', translator: 'תרגום סימולטני', casual: 'צ׳אט', learn: 'לימוד שפה' } },
 };
 
 const App: React.FC = () => {
@@ -21,9 +21,10 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
 
+  // זיהוי שפת מכשיר אוטומטית בעת הטעינה הראשונה
   useEffect(() => {
-    const sysLang = navigator.language.split('-')[0];
-    const detected = SUPPORTED_LANGUAGES.find(l => l.code.startsWith(sysLang)) || SUPPORTED_LANGUAGES[1];
+    const sysLangCode = navigator.language.split('-')[0]; // למשל 'he' או 'en'
+    const detected = SUPPORTED_LANGUAGES.find(l => l.code.startsWith(sysLangCode)) || SUPPORTED_LANGUAGES[1];
     setNativeLang(detected);
   }, []);
 
@@ -80,32 +81,29 @@ const App: React.FC = () => {
       const outputNode = outputCtx.createGain();
       outputNode.connect(outputCtx.destination);
 
-      // --- הגדרות קשיחות למניעת שאלות מיותרות של המודל ---
+      // הנחיות קשיחות למודל למניעת "שכחת" שפות
       const nName = nativeLang.name;
       const tName = targetLang.name;
       let sysInst = "";
 
       if (selectedScenario.id === 'simultaneous') {
-        sysInst = `STRICT TRANSLATION DEVICE MODE. 
-        You are NOT an assistant. Do NOT ask "How can I help". 
-        Your ONLY job: 
-        1. If input is ${nName}, output ONLY ${tName}. 
-        2. If input is ${tName}, output ONLY ${nName}. 
-        3. Never speak ${nName} unless translating TO it. 
-        4. No greetings, no questions, no meta-talk. ONLY TRANSLATION.`;
+        sysInst = `STRICT TRANSLATOR between ${nName} and ${tName}. 
+        If input is ${nName}, translate ONLY to ${tName}. 
+        If input is ${tName}, translate ONLY to ${nName}. 
+        Do not talk to me. Do not ask questions. Only spoken translation output.`;
       } else if (selectedScenario.id === 'translator') {
-        sysInst = `LECTURE TRANSLATOR. Translate everything you hear into ${nName} immediately. DO NOT speak or ask anything else. Continuous translation only.`;
+        sysInst = `LECTURE MODE: Translate everything you hear into ${nName} immediately and continuously. DO NOT stop or ask for help. Output ONLY the translation.`;
       } else if (selectedScenario.id === 'casual') {
-        sysInst = `CHAT PARTNER. Speak ONLY in ${tName}. Do NOT ask "How can I help you today" in ${nName}. Just respond to the conversation in ${tName}.`;
+        sysInst = `CHAT PARTNER: Speak ONLY in ${tName}. Keep responses very short and natural. Do not translate.`;
       } else if (selectedScenario.id === 'learn') {
-        sysInst = `LANGUAGE TEACHER. Speak in ${tName}. If user makes a mistake, respond in ${tName} and provide a correction in [brackets] at the end. Do NOT ask general help questions.`;
+        sysInst = `TUTOR: Speak in ${tName}. Be very brief. After speaking, provide a tiny correction for any mistakes I made in brackets [].`;
       }
 
       const sessionPromise = ai.live.connect({
         model: 'gemini-2.0-flash-exp',
         callbacks: {
           onopen: () => {
-            setStatus(ConnectionStatus.CONNECTED);
+            setStatus(ConnectionStatus.CONNECTED); // כאן אנחנו מעדכנים את הסטטוס להפעלת הכפתור
             const source = inputAudioContextRef.current!.createMediaStreamSource(stream);
             const scriptProcessor = inputAudioContextRef.current!.createScriptProcessor(2048, 1, 1);
             scriptProcessor.onaudioprocess = (e) => {
@@ -131,7 +129,7 @@ const App: React.FC = () => {
               sourcesRef.current.add(source);
             }
           },
-          onerror: () => { setError('Connection Error'); stopConversation(); },
+          onerror: () => { setError('Error'); stopConversation(); },
           onclose: () => setStatus(ConnectionStatus.DISCONNECTED)
         },
         config: { 
@@ -142,7 +140,7 @@ const App: React.FC = () => {
         }
       });
       activeSessionRef.current = await sessionPromise;
-    } catch (e) { setError('Failed to start'); setStatus(ConnectionStatus.ERROR); }
+    } catch (e) { setError('Mic error'); setStatus(ConnectionStatus.ERROR); }
   };
 
   if (hasKey === null) return <div className="h-screen bg-slate-950 flex items-center justify-center"><div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" /></div>;
@@ -154,13 +152,13 @@ const App: React.FC = () => {
           <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg"><Headphones size={20} /></div>
           <div className="flex flex-col">
             <span className="font-black text-sm uppercase">{ui.title}</span>
-            <span className={`text-[10px] font-black uppercase ${status === 'CONNECTED' ? 'text-emerald-400' : 'text-slate-400'}`}>{status}</span>
+            <span className={`text-[10px] font-black uppercase ${status === ConnectionStatus.CONNECTED ? 'text-emerald-400' : 'text-slate-400'}`}>{status}</span>
           </div>
         </div>
       </header>
 
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden">
-        <div className="w-full md:w-[480px] flex flex-col p-6 gap-6 bg-slate-900/30 border-r border-white/5 overflow-y-auto scrollbar-thin">
+        <div className="w-full md:w-[480px] flex flex-col p-6 gap-6 bg-slate-900/30 border-r border-white/5 overflow-y-auto">
           <div className="w-full bg-slate-900/90 rounded-[2rem] border border-white/10 p-5 flex flex-col gap-4 shadow-xl">
             <div className="flex items-center gap-2 bg-slate-800/40 p-2 rounded-[1.5rem]">
               <div className="flex-1 text-center">
@@ -197,7 +195,7 @@ const App: React.FC = () => {
             <Avatar state={status !== ConnectionStatus.CONNECTED ? 'idle' : isSpeaking ? 'speaking' : isMuted ? 'thinking' : 'listening'} />
             <button 
               onClick={status === ConnectionStatus.CONNECTED ? stopConversation : startConversation} 
-              className={`px-12 py-6 rounded-full font-black text-2xl shadow-xl flex items-center gap-3 transition-all active:scale-95 ${status === 'CONNECTED' ? 'bg-red-500 hover:bg-red-600' : 'bg-indigo-600 hover:bg-indigo-500'}`}
+              className={`px-12 py-6 rounded-full font-black text-2xl shadow-xl flex items-center gap-3 transition-all active:scale-95 ${status === ConnectionStatus.CONNECTED ? 'bg-red-500 hover:bg-red-600' : 'bg-indigo-600 hover:bg-indigo-500'}`}
             >
               <Mic size={32} /> {status === ConnectionStatus.CONNECTED ? ui.stop : ui.start}
             </button>
