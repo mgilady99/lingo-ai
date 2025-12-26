@@ -1,31 +1,44 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import Login from './components/Login';
 import Pricing from './components/Pricing';
-// ... שאר הייבואים הקיימים שלך (GoogleGenAI, etc.)
+// כאן נשארים כל ה-imports האחרים שלך (GoogleGenAI וכו')
 
 const App: React.FC = () => {
+  // המשתנים ששולטים באיזה דף רואים
   const [view, setView] = useState<'LOGIN' | 'PRICING' | 'APP'>('LOGIN');
   const [userPlan, setUserPlan] = useState<string>('FREE');
 
-  // פונקציות מעבר בין מסכים
+  // פונקציות למעבר בין מסכים
   const handleLoginSuccess = () => setView('PRICING');
   const handlePlanSelect = (plan: string) => {
     setUserPlan(plan);
     setView('APP');
   };
 
-  // כאן נכנס כל הקוד הקיים של האפליקציה שלך (startConversation, וכו')
-  // אבל ה-return בסוף משתנה כדי להציג את המסך הנכון:
+  // --- כאן נכנס כל הקוד הלוגי הקיים של האפליקציה שלך (startConversation וכו') ---
+  // (דאג להעתיק לכאן את הפונקציות startConversation, stopConversation וכו' מהגרסה הקודמת)
 
-  if (view === 'LOGIN') return <Login onLoginSuccess={handleLoginSuccess} />;
-  if (view === 'PRICING') return <Pricing onPlanSelect={handlePlanSelect} />;
+  // בחירת המסך להצגה
+  if (view === 'LOGIN') {
+    return <Login onLoginSuccess={handleLoginSuccess} />;
+  }
 
+  if (view === 'PRICING') {
+    return <Pricing onPlanSelect={handlePlanSelect} />;
+  }
+
+  // דף האפליקציה הראשי (זה מה שרואים אחרי שהתחברנו)
   return (
-    // כאן נשאר כל ה-HTML הקיים של האפליקציה (ה-header, המודולים והפרסומת של מאיר)
-    <div className="h-screen bg-slate-950 flex flex-col text-slate-200 overflow-hidden">
-       {/* האפליקציה שלך כאן */}
-       <p className="absolute top-2 left-2 text-[10px] text-indigo-500 font-bold">מסלול: {userPlan}</p>
-       {/* שאר קוד ה-HTML של ה-App */}
+    <div className="h-screen bg-slate-950 flex flex-col text-slate-200 overflow-hidden rtl">
+       {/* כאן נמצא כל ה-HTML המעוצב של האפליקציה שלך */}
+       {/* המיקרופון, ה-Avatar, הפרסומת של מאיר גלעדי וכו' */}
+       
+       {/* תגית קטנה שמראה את סוג המנוי בצד */}
+       <div className="absolute top-4 left-4 z-50 px-3 py-1 bg-indigo-600/20 border border-indigo-500/30 rounded-full">
+         <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Plan: {userPlan}</span>
+       </div>
+
+       {/* שאר הקוד של האפליקציה... */}
     </div>
   );
 };
