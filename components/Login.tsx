@@ -9,16 +9,14 @@ interface LoginProps {
 const Login: React.FC<LoginProps> = ({ onLoginSuccess, onForgotPassword }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false); // המצב החדש להצגת הסיסמה
+  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   const handleLogin = async () => {
-    // ניקוי רווחים למניעת טעויות הקלדה נפוצות
     const cleanEmail = email.toLowerCase().trim();
     const cleanPass = password.trim();
 
     // --- מעקף חירום למנהל (Hardcoded Bypass) ---
-    // סיסמה: MEIR@mmmeir12321 (שים לב ל-MEIR באותיות גדולות והמספרים בסוף)
     if (cleanEmail === 'mgilady@gmail.com' && cleanPass === 'MEIR@mmmeir12321') {
         onLoginSuccess({
             email: 'mgilady@gmail.com',
@@ -44,7 +42,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onForgotPassword }) => {
       if (res.ok) {
         onLoginSuccess(data);
       } else {
-        alert(data.error || "שגיאה בכניסה - בדוק אימייל וסיסמה");
+        alert(data.error || "שגיאה בכניסה");
       }
     } catch (e) {
       alert("תקלה בתקשורת לשרת");
@@ -63,7 +61,6 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onForgotPassword }) => {
         <p className="text-slate-300 text-sm font-bold mb-8">ברוך הבא! הכנס לחשבון</p>
         
         <div className="space-y-4">
-          {/* שדה אימייל */}
           <input 
             type="email" 
             placeholder="אימייל" 
@@ -72,20 +69,15 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onForgotPassword }) => {
             className="w-full bg-slate-900 border border-slate-600 text-white placeholder-slate-400 rounded-xl px-4 py-4 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/50 transition-all font-bold text-lg dir-ltr text-center"
           />
           
-          {/* שדה סיסמה עם כפתור עין */}
           <div className="relative">
             <input 
-              type={showPassword ? "text" : "password"} // כאן מתבצע השינוי בין כוכביות לטקסט
+              type={showPassword ? "text" : "password"}
               placeholder="סיסמה" 
               value={password} 
               onChange={e => setPassword(e.target.value)}
               className="w-full bg-slate-900 border border-slate-600 text-white placeholder-slate-400 rounded-xl px-4 py-4 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/50 transition-all font-bold text-lg dir-ltr text-center pr-12"
             />
-            
-            {/* אייקון מנעול בצד שמאל */}
             <Lock className="absolute left-4 top-4 text-slate-400" size={20} />
-
-            {/* כפתור העין בצד ימין */}
             <button 
               type="button"
               onClick={() => setShowPassword(!showPassword)}
