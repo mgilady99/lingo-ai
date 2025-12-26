@@ -35,6 +35,8 @@ export const translations: Record<string, any> = {
     feat_smart: "מודל חכם ומהיר",
     feat_no_ads: "ללא פרסומות",
     feat_best: "המשתלם ביותר!",
+    
+    // 4 המודולים
     mode_live: "תרגום חי",
     mode_simul: "תרגום סימולטני",
     mode_chat: "צ'אט שיחה",
@@ -77,6 +79,8 @@ export const translations: Record<string, any> = {
     feat_smart: "Smart & Fast AI",
     feat_no_ads: "No Ads",
     feat_best: "Most Popular!",
+    
+    // 4 Modules
     mode_live: "Live Translation",
     mode_simul: "Simultaneous Trans",
     mode_chat: "Chat Conversation",
@@ -119,6 +123,8 @@ export const translations: Record<string, any> = {
     feat_smart: "IA inteligente",
     feat_no_ads: "Sin anuncios",
     feat_best: "¡Más popular!",
+    
+    // 4 Modules
     mode_live: "Traducción en vivo",
     mode_simul: "Traducción simultánea",
     mode_chat: "Conversación Chat",
@@ -161,6 +167,8 @@ export const translations: Record<string, any> = {
     feat_smart: "IA rapide",
     feat_no_ads: "Pas de pub",
     feat_best: "Populaire !",
+    
+    // 4 Modules
     mode_live: "Traduction en direct",
     mode_simul: "Traduction simultanée",
     mode_chat: "Discussion Chat",
@@ -203,6 +211,8 @@ export const translations: Record<string, any> = {
     feat_smart: "Smarte KI",
     feat_no_ads: "Keine Werbung",
     feat_best: "Beliebt!",
+    
+    // 4 Modules
     mode_live: "Live-Übersetzung",
     mode_simul: "Simultanübersetzung",
     mode_chat: "Chat-Gespräch",
@@ -245,6 +255,8 @@ export const translations: Record<string, any> = {
     feat_smart: "IA veloce",
     feat_no_ads: "No pubblicità",
     feat_best: "Popolare!",
+    
+    // 4 Modules
     mode_live: "Traduzione dal vivo",
     mode_simul: "Traduzione simultanea",
     mode_chat: "Conversazione Chat",
@@ -287,6 +299,8 @@ export const translations: Record<string, any> = {
     feat_smart: "IA inteligente",
     feat_no_ads: "Sem anúncios",
     feat_best: "Popular!",
+    
+    // 4 Modules
     mode_live: "Tradução ao vivo",
     mode_simul: "Tradução simultânea",
     mode_chat: "Bate-papo",
@@ -329,6 +343,8 @@ export const translations: Record<string, any> = {
     feat_smart: "智能AI",
     feat_no_ads: "无广告",
     feat_best: "热门！",
+    
+    // 4 Modules
     mode_live: "实时翻译",
     mode_simul: "同声传译",
     mode_chat: "聊天对话",
@@ -371,6 +387,8 @@ export const translations: Record<string, any> = {
     feat_smart: "高速AI",
     feat_no_ads: "広告なし",
     feat_best: "人気！",
+    
+    // 4 Modules
     mode_live: "ライブ翻訳",
     mode_simul: "同時通訳",
     mode_chat: "チャット会話",
@@ -413,6 +431,8 @@ export const translations: Record<string, any> = {
     feat_smart: "스마트 AI",
     feat_no_ads: "광고 없음",
     feat_best: "인기!",
+    
+    // 4 Modules
     mode_live: "실시간 번역",
     mode_simul: "동시 통역",
     mode_chat: "채팅 대화",
@@ -455,6 +475,8 @@ export const translations: Record<string, any> = {
     feat_smart: "Умный ИИ",
     feat_no_ads: "Без рекламы",
     feat_best: "Топ!",
+    
+    // 4 Modules
     mode_live: "Живой перевод",
     mode_simul: "Синхронный перевод",
     mode_chat: "Чат разговор",
@@ -497,6 +519,8 @@ export const translations: Record<string, any> = {
     feat_smart: "ذكاء اصطناعي",
     feat_no_ads: "بدون إعلانات",
     feat_best: "شائع!",
+    
+    // 4 Modules
     mode_live: "ترجمة حية",
     mode_simul: "ترجمة فورية",
     mode_chat: "محادثة دردشة",
@@ -539,6 +563,8 @@ export const translations: Record<string, any> = {
     feat_smart: "स्मार्ट AI",
     feat_no_ads: "विज्ञापन नहीं",
     feat_best: "लोकप्रिय!",
+    
+    // 4 Modules
     mode_live: "लाइव अनुवाद",
     mode_simul: "एक साथ अनुवाद",
     mode_chat: "चैट वार्तालाप",
@@ -581,6 +607,8 @@ export const translations: Record<string, any> = {
     feat_smart: "Slimme AI",
     feat_no_ads: "Geen ads",
     feat_best: "Populair!",
+    
+    // 4 Modules
     mode_live: "Live vertaling",
     mode_simul: "Simultane vertaling",
     mode_chat: "Chatgesprek",
