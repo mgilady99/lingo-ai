@@ -1,132 +1,103 @@
-import React, { useState, useEffect } from 'react';
-import { Check, Zap, Crown, Gift, ArrowRight, Loader2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { Check, Zap, Crown, CreditCard, Ticket } from 'lucide-react';
 
-// ה-Client ID שלך כבר מוטמע כאן
-const PAYPAL_CLIENT_ID = "AWmyrNxDvPJHZjVa8ZJOaUdPZ1m5K-WnCu_jl0IYq4TGotsi0RinsrX1cV8K80H2pXrL20mUvEXnTRTY";
+interface PricingProps {
+  onPlanSelect: (plan: string) => void;
+  userEmail?: string; // הוספנו את האימייל כדי שנדע את מי לשדרג
+}
 
-const Pricing: React.FC<{ onPlanSelect: (plan: string) => void }> = ({ onPlanSelect }) => {
+const Pricing: React.FC<PricingProps> = ({ onPlanSelect, userEmail }) => {
   const [promoCode, setPromoCode] = useState('');
-  const [isSuccess, setIsSuccess] = useState(false);
-  const [sdkReady, setSdkReady] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const plans = [
-    { id: 'FREE', name: 'חינם', price: '0', tokens: '5,000', icon: <Zap className="text-slate-400" /> },
-    { id: 'BASIC', name: 'Standard', price: '58.80', tokens: '20,000', icon: <Crown className="text-indigo-400" />, desc: 'חיוב שנתי ($4.90 לחודש)' },
-    { id: 'PRO', name: 'Premium', price: '142.80', tokens: '100,000', icon: <Crown className="text-amber-400" />, desc: 'חיוב שנתי ($11.90 לחודש)' }
-  ];
-
-  // טעינת ה-SDK של פייפאל ברגע שהדף עולה
-  useEffect(() => {
-    const scriptId = "paypal-sdk-script";
-    if (document.getElementById(scriptId)) {
-      setSdkReady(true);
-      return;
+  const handlePromoCode = async () => {
+    if (!promoCode) return;
+    if (!userEmail) {
+        alert("שגיאה: לא זוהה אימייל למשתמש. נסה להתנתק ולהתחבר שוב.");
+        return;
     }
 
-    const script = document.createElement("script");
-    script.id = scriptId;
-    script.src = `https://www.paypal.com/sdk/js?client-id=${PAYPAL_CLIENT_ID}&currency=USD`;
-    script.async = true;
-    script.onload = () => setSdkReady(true);
-    document.body.appendChild(script);
-  }, []);
+    setLoading(true);
+    try {
+      // שליחה באותיות קטנות
+      const cleanCode = promoCode.trim().toLowerCase();
 
-  // פונקציה ליצירת הכפתור עבור כל מסלול
-  const initPayPalButton = (planId: string, price: string) => {
-    const container = document.getElementById(`paypal-container-${planId}`);
-    // @ts-ignore
-    if (window.paypal && container && !container.hasChildNodes()) {
-      // @ts-ignore
-      window.paypal.Buttons({
-        style: { layout: 'vertical', color: 'blue', shape: 'rect', label: 'pay' },
-        createOrder: (data: any, actions: any) => {
-          return actions.order.create({
-            purchase_units: [{
-              description: `LingoLive Pro - ${planId}`,
-              amount: { value: price }
-            }]
-          });
-        },
-        onApprove: async (data: any, actions: any) => {
-          await actions.order.capture();
-          onPlanSelect(planId); // מעבר לאתר לאחר תשלום מוצלח
-        },
-        onError: () => alert("שגיאה בתשלום פייפאל")
-      }).render(`#paypal-container-${planId}`);
+      const res = await fetch('/api/upgrade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: userEmail, promoCode: cleanCode })
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        alert("הקוד התקבל! המנוי שודרג ל-PRO.");
+        onPlanSelect('PRO');
+      } else {
+        alert(data.error || "קוד לא תקין");
+      }
+    } catch (e) {
+      alert("שגיאת תקשורת");
+    } finally {
+      setLoading(false);
     }
-  };
-
-  // מפעיל את הכפתורים ברגע שה-SDK מוכן
-  useEffect(() => {
-    if (sdkReady) {
-      plans.filter(p => p.id !== 'FREE').forEach(p => initPayPalButton(p.id, p.price));
-    }
-  }, [sdkReady]);
-
-  const handleRedeem = () => {
-    if (promoCode === "MEIR12321") setIsSuccess(true);
-    else alert("קוד לא תקין.");
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-950 text-slate-200 font-['Inter'] rtl overflow-y-auto pb-20">
-      <div className="w-full max-w-[340px] mx-auto py-10 flex flex-col items-center">
-        <h1 className="text-2xl font-black text-white mb-2 uppercase tracking-tighter italic">שדרוג מנוי</h1>
-        <p className="text-slate-400 text-[9px] font-bold mb-8 text-center uppercase tracking-widest">Secure Payment via PayPal</p>
+    <div className="h-full overflow-y-auto p-8 flex flex-col items-center gap-8 bg-[#0f172a] rtl font-['Inter'] text-white">
+      <div className="text-center space-y-2">
+        <h2 className="text-3xl font-black text-white">בחר מסלול</h2>
+        <p className="text-slate-400">שדרג את החוויה שלך עם LingoLive Pro</p>
+      </div>
 
-        <div className="w-full space-y-4 mb-10">
-          {plans.map((plan) => (
-            <div key={plan.id} className="bg-slate-900 border border-white/10 rounded-[2rem] p-5 shadow-xl">
-              <div className="flex justify-between items-center mb-3">
-                <div className="text-xl">{plan.icon}</div>
-                <div className="text-left font-black text-xl text-white">${plan.price}</div>
-              </div>
-              <h2 className="text-lg font-black text-white mb-1 uppercase tracking-tight">{plan.name}</h2>
-              <p className="text-indigo-400 text-[11px] font-black mb-1">{plan.tokens} טוקנים</p>
-              {plan.desc && <p className="text-slate-500 text-[8px] mb-4 font-bold italic">{plan.desc}</p>}
-              
-              {plan.id === 'FREE' ? (
-                <button 
-                  onClick={() => onPlanSelect('FREE')} 
-                  className="w-full bg-slate-800 hover:bg-slate-700 py-3 rounded-xl font-black text-sm transition-all active:scale-95"
-                >
-                  המשך בחינם
-                </button>
-              ) : (
-                <div id={`paypal-container-${plan.id}`} className="mt-2 min-h-[45px]">
-                  {!sdkReady && (
-                    <div className="flex items-center justify-center py-2">
-                      <Loader2 className="animate-spin text-indigo-500" size={20} />
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
+      <div className="grid md:grid-cols-2 gap-6 w-full max-w-4xl">
+        {/* כרטיס חינם */}
+        <div className="bg-slate-900/50 p-8 rounded-3xl border border-white/5 flex flex-col items-center text-center opacity-60">
+          <div className="bg-slate-800 p-4 rounded-full mb-4"><Zap size={24} className="text-slate-400"/></div>
+          <h3 className="text-xl font-bold mb-2">Basic</h3>
+          <div className="text-3xl font-black mb-6">₪0</div>
+          <ul className="space-y-3 mb-8 text-slate-400 text-sm">
+            <li className="flex items-center gap-2 justify-center"><Check size={14}/> 5,000 טוקנים</li>
+            <li className="flex items-center gap-2 justify-center"><Check size={14}/> גישה בסיסית</li>
+          </ul>
         </div>
 
-        {/* קוד הטבה */}
-        <div className="w-full bg-slate-900/50 border border-white/5 rounded-[2rem] p-6 text-center">
-          {!isSuccess ? (
-            <div className="flex flex-col gap-3">
-              <span className="text-slate-400 font-black text-[10px] mb-1">יש לך קוד הטבה?</span>
-              <input 
-                type="text" placeholder="הכנס קוד" 
-                className="w-full bg-slate-950 border border-white/10 rounded-xl px-4 py-2 text-white text-center font-bold text-sm"
-                value={promoCode} onChange={(e) => setPromoCode(e.target.value)}
-              />
-              <button onClick={handleRedeem} className="w-full bg-slate-800 py-2 rounded-xl font-black text-xs">הפעל</button>
-            </div>
-          ) : (
-            <div className="animate-in fade-in zoom-in duration-300">
-              <div className="w-10 h-10 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-3">
-                <Check size={20} className="text-emerald-500" />
-              </div>
-              <button onClick={() => onPlanSelect('PRO')} className="w-full bg-indigo-600 py-4 rounded-xl flex items-center justify-center gap-2 font-black text-lg shadow-lg shadow-indigo-500/30">
-                עבור לאתר <ArrowRight size={20} />
-              </button>
-            </div>
-          )}
+        {/* כרטיס PRO */}
+        <div className="bg-slate-900 p-8 rounded-3xl border border-indigo-500 relative flex flex-col items-center text-center shadow-2xl shadow-indigo-500/20">
+          <div className="absolute -top-4 bg-indigo-600 text-white px-4 py-1 rounded-full text-xs font-bold uppercase tracking-wider">מומלץ</div>
+          <div className="bg-indigo-600/20 p-4 rounded-full mb-4"><Crown size={24} className="text-indigo-400"/></div>
+          <h3 className="text-xl font-bold mb-2 text-white">PREMIUM</h3>
+          <div className="text-3xl font-black mb-1 text-white">$142.80</div>
+          <p className="text-slate-400 text-xs mb-6">חיוב שנתי</p>
+          
+          <button className="w-full bg-[#0070BA] hover:bg-[#005ea6] text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 mb-3">
+             <CreditCard size={18}/> שלם ב-PayPal
+          </button>
+          <button className="w-full bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2">
+             <CreditCard size={18}/> כרטיס אשראי
+          </button>
+        </div>
+      </div>
+
+      {/* אזור קוד הטבה */}
+      <div className="w-full max-w-md bg-slate-900/80 p-6 rounded-2xl border border-white/10 mt-4">
+        <label className="text-sm font-bold text-slate-400 mb-2 block flex items-center gap-2">
+            <Ticket size={16} className="text-indigo-400"/> יש לך קוד הטבה?
+        </label>
+        <div className="flex gap-2">
+            <input 
+                value={promoCode}
+                onChange={(e) => setPromoCode(e.target.value)}
+                placeholder="למשל: gift10003"
+                className="flex-1 bg-black/30 border border-white/10 rounded-xl px-4 py-2 text-white outline-none focus:border-indigo-500 text-center"
+            />
+            <button 
+                onClick={handlePromoCode}
+                disabled={loading}
+                className="bg-indigo-600 hover:bg-indigo-500 px-6 py-2 rounded-xl font-bold text-white transition-all disabled:opacity-50"
+            >
+                {loading ? 'בודק...' : 'הפעל'}
+            </button>
         </div>
       </div>
     </div>
