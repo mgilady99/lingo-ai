@@ -17,7 +17,9 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onForgotPassword }) => {
   const handleLogin = async () => {
     const cleanEmail = email.toLowerCase().trim();
     const cleanPass = password.trim();
-    const cleanPromo = promoCode.trim();
+    
+    // הפיכת קוד ההטבה לאותיות גדולות (חובה!)
+    const cleanPromo = promoCode.trim().toUpperCase();
 
     // מעקף מנהל
     if (cleanEmail === 'mgilady@gmail.com' && cleanPass === 'MEIR@mmmeir12321') {
@@ -83,7 +85,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onForgotPassword }) => {
             <div className="animate-in fade-in slide-in-from-top-2">
               <input 
                 type="text" placeholder="הכנס קוד הטבה כאן" value={promoCode} onChange={e => setPromoCode(e.target.value)}
-                className="w-full bg-indigo-900/20 border border-indigo-500/50 text-indigo-200 rounded-xl px-4 py-3 font-bold text-center outline-none focus:bg-indigo-900/40"
+                className="w-full bg-indigo-900/20 border border-indigo-500/50 text-indigo-200 rounded-xl px-4 py-3 font-bold text-center outline-none focus:bg-indigo-900/40 uppercase"
               />
             </div>
           )}
@@ -92,7 +94,6 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onForgotPassword }) => {
             onClick={handleLogin} disabled={isLoading}
             className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black py-4 rounded-xl transition-all shadow-lg active:scale-95 text-xl mt-4 border border-indigo-400/30"
           >
-            {/* הטקסט תוקן כאן */}
             {isLoading ? "מתחבר..." : "התחבר"}
           </button>
         </div>
