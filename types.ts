@@ -1,4 +1,3 @@
-
 export interface Language {
   code: string;
   name: string;
@@ -9,7 +8,7 @@ export interface Language {
 export interface PracticeScenario {
   id: string;
   icon: string;
-  title: string;
+  title: string; // המפתח לתרגום
   systemInstruction: string;
 }
 
@@ -20,18 +19,8 @@ export enum ConnectionStatus {
 }
 
 export const SUPPORTED_LANGUAGES: Language[] = [
-  { 
-    code: 'he-IL', 
-    name: 'עברית', 
-    flag: '🇮🇱', 
-    voiceName: 'he-IL-HilaNeural' 
-  },
-  { 
-    code: 'en-US', 
-    name: 'English', 
-    flag: '🇺🇸', 
-    voiceName: 'en-US-Journey-D' 
-  },
+  { code: 'he-IL', name: 'Hebrew', flag: '🇮🇱', voiceName: 'he-IL-HilaNeural' },
+  { code: 'en-US', name: 'English', flag: '🇺🇸', voiceName: 'en-US-Journey-D' },
   { code: 'es-ES', name: 'Spanish', flag: '🇪🇸', voiceName: 'es-ES-ElviraNeural' },
   { code: 'fr-FR', name: 'French', flag: '🇫🇷', voiceName: 'fr-FR-DeniseNeural' },
   { code: 'de-DE', name: 'German', flag: '🇩🇪', voiceName: 'de-DE-KatjaNeural' },
@@ -46,42 +35,30 @@ export const SUPPORTED_LANGUAGES: Language[] = [
   { code: 'nl-NL', name: 'Dutch', flag: '🇳🇱', voiceName: 'nl-NL-ColetteNeural' }
 ];
 
-// --- הנה התרחישים שחזרו לעברית ---
+// --- 4 המודולים החדשים ---
 export const SCENARIOS: PracticeScenario[] = [
   { 
-    id: 'cafe', 
-    icon: '☕', 
-    title: 'הזמנת קפה', 
-    systemInstruction: 'Simulation: Ordering coffee at a cafe.' 
+    id: 'live', 
+    icon: '🎙️', 
+    title: 'mode_live', 
+    systemInstruction: 'Act as a precise interpreter. Translate exactly what is said between the two languages instantly. Do not add conversational filler.' 
   },
   { 
-    id: 'taxi', 
-    icon: '🚕', 
-    title: 'הזמנת מונית', 
-    systemInstruction: 'Simulation: Giving directions to a taxi driver.' 
+    id: 'simul', 
+    icon: '🎧', 
+    title: 'mode_simul', 
+    systemInstruction: 'Act as a simultaneous interpreter. Provide continuous, fluid translation of the speech stream. Prioritize speed and flow.' 
   },
   { 
-    id: 'hotel', 
-    icon: '🏨', 
-    title: 'צ\'ק-אין במלון', 
-    systemInstruction: 'Simulation: Checking into a hotel.' 
+    id: 'chat', 
+    icon: '💬', 
+    title: 'mode_chat', 
+    systemInstruction: 'Act as a friendly conversation partner. Engage in a natural dialogue in the target language. Ask follow-up questions.' 
   },
   { 
-    id: 'doctor', 
-    icon: '👨‍⚕️', 
-    title: 'ביקור רופא', 
-    systemInstruction: 'Simulation: Describing symptoms to a doctor.' 
-  },
-  { 
-    id: 'job', 
-    icon: '💼', 
-    title: 'ראיון עבודה', 
-    systemInstruction: 'Simulation: Answering job interview questions.' 
-  },
-  { 
-    id: 'shopping', 
-    icon: '🛍️', 
-    title: 'קניות בגדים', 
-    systemInstruction: 'Simulation: Buying clothes and asking for sizes.' 
+    id: 'learn', 
+    icon: '🎓', 
+    title: 'mode_learn', 
+    systemInstruction: 'Act as a language tutor. Help the user learn. Correct their grammar mistakes gently and explain new vocabulary when necessary.' 
   }
 ];
