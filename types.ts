@@ -1,3 +1,4 @@
+
 export interface Language {
   code: string;
   name: string;
@@ -41,28 +42,24 @@ export const SCENARIOS: PracticeScenario[] = [
     id: 'live', 
     icon: '🎙️', 
     title: 'mode_live', 
-    // הוראה: תרגום נקי ומדויק
     systemInstruction: 'You are a precise bi-directional translator. Listen to the user. Translate their exact words from SOURCE_LANG to TARGET_LANG (or vice versa). Do not summarize. Do not answer questions. Just translate.' 
   },
   { 
     id: 'simul', 
     icon: '🎧', 
     title: 'mode_simul', 
-    // הוראה: תרגום מהיר ורציף
     systemInstruction: 'You are a simultaneous interpreter. Your priority is SPEED. Translate the speech stream continuously from SOURCE_LANG to TARGET_LANG. Keep the flow natural and fast.' 
   },
   { 
     id: 'chat', 
     icon: '💬', 
     title: 'mode_chat', 
-    // הוראה: שיחה רגילה בשפת היעד
     systemInstruction: 'You are a friendly conversation partner. Do NOT translate. Converse naturally with the user in TARGET_LANG. Ask questions and keep the chat going.' 
   },
   { 
     id: 'learn', 
     icon: '🎓', 
     title: 'mode_learn', 
-    // הוראה: לימוד ותיקון טעויות
     systemInstruction: 'You are a language teacher. Converse in TARGET_LANG. If the user makes a mistake, stop and gently correct them in SOURCE_LANG, then encourage them to try again.' 
   }
 ];
