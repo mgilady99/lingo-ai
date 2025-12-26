@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Check, Zap, Crown, Gift, ArrowRight } from 'lucide-react';
 
@@ -24,27 +25,26 @@ const Pricing: React.FC<{ onPlanSelect: (plan: string) => void }> = ({ onPlanSel
 
         <div className="w-full space-y-4 mb-10">
           {plans.map((plan) => (
-            <div key={plan.id} className="bg-slate-900 border border-white/10 rounded-[2rem] p-6 shadow-xl relative overflow-hidden group">
+            <div key={plan.id} className="bg-slate-900 border border-white/10 rounded-[2.5rem] p-6 shadow-xl">
               <div className="flex justify-between items-center mb-4">
                 <div className="text-2xl">{plan.icon}</div>
                 <div className="text-left">
                   <span className="text-3xl font-black text-white">${plan.price}</span>
-                  {plan.id !== 'FREE' && <span className="text-slate-500 text-[9px] block font-bold italic">/MO (ANNUAL BILLING)</span>}
+                  {plan.id !== 'FREE' && <span className="text-slate-500 text-[9px] block font-bold italic">/MO (ANNUAL)</span>}
                 </div>
               </div>
               <h2 className="text-xl font-black text-white mb-1 uppercase tracking-tighter">{plan.name}</h2>
               <p className="text-indigo-400 text-sm font-black mb-5">{plan.tokens} טוקנים</p>
               <button 
                 onClick={() => onPlanSelect(plan.id)}
-                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black py-4 rounded-2xl transition-all shadow-lg active:scale-95 text-base"
+                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black py-4 rounded-2xl transition-all shadow-lg active:scale-95"
               >
-                בחר מסלול
+                {plan.id === 'FREE' ? 'המשך בחינם' : 'בחר מסלול'}
               </button>
             </div>
           ))}
         </div>
 
-        {/* קוד הטבה */}
         <div className="w-full bg-slate-900/50 border border-white/5 rounded-[2rem] p-6 text-center shadow-2xl">
           {!isSuccess ? (
             <div className="flex flex-col gap-3">
@@ -54,19 +54,16 @@ const Pricing: React.FC<{ onPlanSelect: (plan: string) => void }> = ({ onPlanSel
               </div>
               <input 
                 type="text" placeholder="הכנס קוד כאן" 
-                className="w-full bg-slate-950 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500 font-bold text-center text-base"
+                className="w-full bg-slate-950 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500 font-bold text-center"
                 value={promoCode} onChange={(e) => setPromoCode(e.target.value)}
               />
-              <button onClick={handleRedeem} className="w-full bg-slate-800 hover:bg-slate-700 py-3 rounded-xl font-black text-sm transition-all">הפעל קוד</button>
+              <button onClick={handleRedeem} className="w-full bg-slate-800 hover:bg-slate-700 py-3 rounded-xl font-black text-sm">הפעל קוד</button>
             </div>
           ) : (
-            <div className="animate-in fade-in zoom-in duration-300 py-2">
-              <div className="w-12 h-12 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Check size={28} className="text-emerald-500" />
-              </div>
+            <div className="animate-in fade-in zoom-in duration-300">
+              <div className="w-12 h-12 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-4"><Check size={28} className="text-emerald-500" /></div>
               <h3 className="text-xl font-black text-white mb-1 uppercase tracking-tighter">הופעל בהצלחה!</h3>
-              <p className="text-slate-400 font-bold mb-6 text-xs uppercase tracking-widest text-emerald-400">Premium Activated</p>
-              
+              <p className="text-slate-400 font-bold mb-6 text-xs uppercase text-emerald-400">Premium Activated</p>
               <button 
                 onClick={() => onPlanSelect('PRO')} 
                 className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black py-5 rounded-2xl flex items-center justify-center gap-3 shadow-xl shadow-indigo-500/40 text-xl animate-pulse"
