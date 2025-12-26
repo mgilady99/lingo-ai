@@ -1,4 +1,3 @@
-
 export const decode = (base64: string): ArrayBuffer => {
   const binaryString = atob(base64);
   const len = binaryString.length;
@@ -16,7 +15,6 @@ export const decodeAudioData = (
   channels: number = 1
 ): AudioBuffer => {
   const dataView = new DataView(arrayBuffer);
-  // גוגל שולח 16-bit PCM, כל דגימה היא 2 בייטים
   const length = arrayBuffer.byteLength / 2; 
   
   if (length === 0) return audioContext.createBuffer(channels, 1, sampleRate);
@@ -25,7 +23,7 @@ export const decodeAudioData = (
   const channelData = audioBuffer.getChannelData(0);
 
   for (let i = 0; i < length; i++) {
-    const int16 = dataView.getInt16(i * 2, true); // Little Endian
+    const int16 = dataView.getInt16(i * 2, true); 
     channelData[i] = int16 / 32768.0;
   }
 
@@ -39,7 +37,6 @@ export const createPcmBlob = (float32Array: Float32Array): string => {
     int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
   }
   
-  // המרה ידנית ונקייה ל-Base64
   let binary = '';
   const bytes = new Uint8Array(int16Array.buffer);
   const len = bytes.byteLength;
