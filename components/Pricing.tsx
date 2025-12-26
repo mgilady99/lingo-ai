@@ -3,6 +3,7 @@ import { Check, Zap, Crown, Gift } from 'lucide-react';
 
 const Pricing: React.FC<{ onPlanSelect: (plan: string) => void }> = ({ onPlanSelect }) => {
   const [promoCode, setPromoCode] = useState('');
+  const [isSuccess, setIsSuccess] = useState(false);
 
   const plans = [
     {
@@ -38,8 +39,7 @@ const Pricing: React.FC<{ onPlanSelect: (plan: string) => void }> = ({ onPlanSel
 
   const handleRedeem = () => {
     if (promoCode === "MEIR12321") {
-      alert("קוד הטבה הופעל! שודרגת למסלול Premium בחינם.");
-      onPlanSelect('PRO');
+      setIsSuccess(true);
     } else {
       alert("קוד לא תקין.");
     }
@@ -49,14 +49,14 @@ const Pricing: React.FC<{ onPlanSelect: (plan: string) => void }> = ({ onPlanSel
     <div className="min-h-screen bg-slate-950 p-8 font-['Inter'] rtl text-right">
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-12">
-          <h1 className="text-4xl font-black text-white mb-4">בחר את המסלול שלך</h1>
-          <p className="text-slate-400 font-bold">התחל לדבר ולהבין כל שפה ברגע</p>
+          <h1 className="text-4xl font-black text-white mb-4 uppercase tracking-tighter">בחר את המסלול שלך</h1>
+          <p className="text-slate-400 font-bold">הצטרף לאלפי משתמשים שכבר מדברים בכל שפה</p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           {plans.map((plan) => (
             <div key={plan.id} className="bg-slate-900 border border-white/10 rounded-[3rem] p-8 flex flex-col shadow-2xl hover:border-indigo-500/50 transition-all">
-              <div className="mb-6">{plan.icon}</div>
+              <div className="mb-6 text-3xl">{plan.icon}</div>
               <h2 className="text-2xl font-black text-white mb-2">{plan.name}</h2>
               <div className="mb-6">
                 <span className="text-4xl font-black text-white">${plan.price}</span>
@@ -77,13 +77,13 @@ const Pricing: React.FC<{ onPlanSelect: (plan: string) => void }> = ({ onPlanSel
 
               {plan.yearly && (
                 <p className="text-[10px] text-slate-500 mb-4 font-bold text-center italic">
-                  * חיוב שנתי של ${plan.yearly} (נחסך זמן יקר)
+                  * חיוב שנתי של ${plan.yearly}
                 </p>
               )}
 
               <button 
                 onClick={() => onPlanSelect(plan.id)}
-                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black py-4 rounded-2xl transition-all shadow-lg"
+                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black py-4 rounded-2xl transition-all shadow-lg shadow-indigo-500/10"
               >
                 {plan.buttonText}
               </button>
@@ -91,22 +91,40 @@ const Pricing: React.FC<{ onPlanSelect: (plan: string) => void }> = ({ onPlanSel
           ))}
         </div>
 
-        {/* קוד הטבה סודי */}
-        <div className="mt-12 max-w-md mx-auto bg-slate-900/50 border border-white/5 rounded-3xl p-6 text-center">
-          <div className="flex items-center justify-center gap-2 mb-4 text-slate-400">
-            <Gift size={20} />
-            <span className="font-bold">יש לך קוד הטבה?</span>
-          </div>
-          <div className="flex gap-2">
-            <input 
-              type="text" 
-              placeholder="הכנס קוד כאן" 
-              className="flex-1 bg-slate-950 border border-white/10 rounded-xl px-4 py-2 text-white outline-none focus:border-indigo-500"
-              value={promoCode}
-              onChange={(e) => setPromoCode(e.target.value)}
-            />
-            <button onClick={handleRedeem} className="bg-slate-800 hover:bg-slate-700 px-6 py-2 rounded-xl font-bold">הפעל</button>
-          </div>
+        {/* קטע קוד הטבה מעודכן */}
+        <div className="mt-12 max-w-md mx-auto bg-slate-900/50 border border-white/5 rounded-[2.5rem] p-8 text-center shadow-2xl">
+          {!isSuccess ? (
+            <>
+              <div className="flex items-center justify-center gap-2 mb-4 text-slate-400 font-black">
+                <Gift size={24} className="text-indigo-400" />
+                <span>יש לך קוד הטבה?</span>
+              </div>
+              <div className="flex gap-2">
+                <input 
+                  type="text" 
+                  placeholder="הכנס קוד כאן" 
+                  className="flex-1 bg-slate-950 border border-white/10 rounded-2xl px-5 py-3 text-white outline-none focus:border-indigo-500 font-bold"
+                  value={promoCode}
+                  onChange={(e) => setPromoCode(e.target.value)}
+                />
+                <button onClick={handleRedeem} className="bg-indigo-600 hover:bg-indigo-500 px-8 py-3 rounded-2xl font-black transition-all">הפעל</button>
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-col items-center">
+              <div className="w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center mb-4">
+                <Check size={32} className="text-emerald-500" />
+              </div>
+              <h3 className="text-2xl font-black text-white mb-2">קוד הטבה הופעל!</h3>
+              <p className="text-slate-400 font-bold mb-6">שודרגת למסלול Premium בחינם</p>
+              <button 
+                onClick={() => onPlanSelect('PRO')} 
+                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-4 rounded-2xl shadow-xl shadow-emerald-500/20 transition-all text-xl"
+              >
+                עבור לאתר עכשיו
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
