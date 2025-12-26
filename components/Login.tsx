@@ -18,13 +18,12 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onForgotPassword }) => {
     const cleanEmail = email.toLowerCase().trim();
     const cleanPass = password.trim();
     
-    // הפיכת קוד ההטבה לאותיות גדולות (חובה!)
-    const cleanPromo = promoCode.trim().toUpperCase();
+    // תיקון: שולחים את הקוד כפי שהוא (השרת יהפוך אותו לקטן בכל מקרה)
+    const cleanPromo = promoCode.trim();
 
-    // מעקף מנהל
-    if (cleanEmail === 'mgilady@gmail.com' && cleanPass === 'MEIR@mmmeir12321') {
-        onLoginSuccess({ email: 'mgilady@gmail.com', role: 'ADMIN', plan: 'PRO', tokens_used: 0 });
-        return;
+    // מעקף מנהל מקומי
+    if (cleanEmail === 'mgilady@gmail.com') {
+        // המנהל ייבדק מול השרת לקבלת הרשאות מלאות
     }
 
     if (!email.includes('@')) { alert("אימייל לא תקין"); return; }
@@ -39,7 +38,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onForgotPassword }) => {
       const data = await res.json();
       
       if (res.ok) {
-        if(data.plan === 'PRO' && cleanPromo) alert("קוד ההטבה התקבל! מנוי PRO הופעל.");
+        if(data.plan === 'PRO' && cleanPromo && data.role !== 'ADMIN') alert("קוד ההטבה התקבל! מנוי PRO הופעל.");
         onLoginSuccess(data);
       } else {
         alert(data.error || "שגיאה בכניסה");
@@ -84,8 +83,8 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onForgotPassword }) => {
           ) : (
             <div className="animate-in fade-in slide-in-from-top-2">
               <input 
-                type="text" placeholder="הכנס קוד הטבה כאן" value={promoCode} onChange={e => setPromoCode(e.target.value)}
-                className="w-full bg-indigo-900/20 border border-indigo-500/50 text-indigo-200 rounded-xl px-4 py-3 font-bold text-center outline-none focus:bg-indigo-900/40 uppercase"
+                type="text" placeholder="הכנס קוד (למשל gift10001)" value={promoCode} onChange={e => setPromoCode(e.target.value)}
+                className="w-full bg-indigo-900/20 border border-indigo-500/50 text-indigo-200 rounded-xl px-4 py-3 font-bold text-center outline-none focus:bg-indigo-900/40"
               />
             </div>
           )}
