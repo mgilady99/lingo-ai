@@ -1,42 +1,42 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
-import { Mic, MicOff, Headphones, XCircle, ChevronRight, RefreshCw, Trash2, AlertCircle } from 'lucide-react';
+import { Mic, MicOff, Headphones, XCircle, ChevronRight, RefreshCw, Trash2, AlertCircle, ExternalLink } from 'lucide-react';
 import { ConnectionStatus, SUPPORTED_LANGUAGES, SCENARIOS, Language, PracticeScenario, TranscriptionEntry } from './types';
 import { decode, decodeAudioData, createPcmBlob } from './services/audioService';
 import Avatar from './components/Avatar';
 import AudioVisualizer from './components/AudioVisualizer';
-import transcriptitem from './components/transcriptitem'; 
 
 const uiTranslations: Record<string, any> = {
-  'en-US': { title: 'LingoLive Pro', native: 'Native Language', target: 'Translation/Learning', start: 'START', stop: 'STOP', feed: 'Live Feed', logs: 'Logs', scenarios: { simultaneous: 'LIVE TRANSLATE', translator: 'Simultaneous Translation', casual: 'CHAT', learn: 'LEARN' } },
-  'he-IL': { title: 'לינגו-לייב פרו', native: 'שפת אם', target: 'שפת תרגום/למידה', start: 'התחל', stop: 'עצור', feed: 'תמלול חי', logs: 'לוגים', scenarios: { simultaneous: 'LIVE TRANSLATE', translator: 'תרגום סימולטני', casual: 'צ׳אט', learn: 'למידה' } },
+  'en-US': { title: 'LingoLive Pro', native: 'Native Language', target: 'Learning Language', start: 'START', stop: 'STOP', adSpace: 'ADVERTISING SPACE', scenarios: { simultaneous: 'LIVE TRANSLATE', translator: 'Simultaneous Translation', casual: 'CHAT', learn: 'LEARN' } },
+  'he-IL': { title: 'לינגו-לייב פרו', native: 'שפת אם', target: 'שפה נלמדת', start: 'התחל', stop: 'עצור', adSpace: 'מרחב פרסום', scenarios: { simultaneous: 'תרגום חי', translator: 'תרגום סימולטני', casual: 'צ׳אט', learn: 'לימוד שפה' } },
 };
 
 const App: React.FC = () => {
   const [hasKey, setHasKey] = useState<boolean | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>(ConnectionStatus.DISCONNECTED);
-  const [targetLang, setTargetLang] = useState<Language>(SUPPORTED_LANGUAGES[0]);
-  const [nativeLang, setNativeLang] = useState<Language>(SUPPORTED_LANGUAGES[1]);
+  const [targetLang, setTargetLang] = useState<Language>(SUPPORTED_LANGUAGES[0]); // ברירת מחדל אנגלית
+  const [nativeLang, setNativeLang] = useState<Language>(SUPPORTED_LANGUAGES[1]); // ברירת מחדל עברית
   const [selectedScenario, setSelectedScenario] = useState<PracticeScenario>(SCENARIOS[0]);
   const [isMuted, setIsMuted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [transcript, setTranscript] = useState<TranscriptionEntry[]>([]);
-  const [interimUserText, setInterimUserText] = useState('');
-  const [interimModelText, setInterimModelText] = useState('');
+
+  // זיהוי שפת מערכת אוטומטי
+  useEffect(() => {
+    const sysLangCode = navigator.language.split('-')[0];
+    const detected = SUPPORTED_LANGUAGES.find(l => l.code.startsWith(sysLangCode)) || SUPPORTED_LANGUAGES[1];
+    setNativeLang(detected);
+  }, []);
 
   const ui = uiTranslations[nativeLang.code] || uiTranslations['en-US'];
   const isRTL = nativeLang.code === 'he-IL' || nativeLang.code === 'ar-XA';
 
-  const transcriptEndRef = useRef<HTMLDivElement>(null);
   const activeSessionRef = useRef<any>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
   const inputAudioContextRef = useRef<AudioContext | null>(null);
   const outputAudioContextRef = useRef<AudioContext | null>(null);
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const nextStartTimeRef = useRef(0);
-
-  useEffect(() => { transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [transcript, interimUserText, interimModelText]);
 
   useEffect(() => {
     const checkKey = () => {
@@ -53,8 +53,6 @@ const App: React.FC = () => {
     sourcesRef.current.clear();
     setStatus(ConnectionStatus.DISCONNECTED);
     setIsSpeaking(false);
-    setInterimUserText('');
-    setInterimModelText('');
   }, []);
 
   const startConversation = async () => {
@@ -77,26 +75,20 @@ const App: React.FC = () => {
       const outputNode = outputCtx.createGain();
       outputNode.connect(outputCtx.destination);
 
-      // הגדרת לוגיקה מחמירה לפי המודול שנבחר
+      // הגדרת לוגיקה למודלים השונים
       let sysInst = "";
-      
       if (selectedScenario.id === 'simultaneous') {
-        // LIVE TRANSLATE - שיחת 2 אנשים
-        sysInst = `You are a conversation interpreter between ${nativeLang.name} and ${targetLang.name}. 
-        When you hear ${nativeLang.name}, translate to ${targetLang.name}. 
-        When you hear ${targetLang.name}, translate to ${nativeLang.name}. 
-        Wait for a sentence to finish, then translate. Speak only the translation.`;
+        // LIVE TRANSLATE - דו כיווני
+        sysInst = `TWO-WAY DIALOGUE INTERPRETER. Translate between ${nativeLang.name} and ${targetLang.name}. If you hear A, speak B. If you hear B, speak A. Be fast and brief.`;
       } else if (selectedScenario.id === 'translator') {
-        // SIMULTANEOUS TRANSLATION - הרצאות/נאומים
-        sysInst = `You are a high-speed simultaneous interpreter for a lecture. 
-        Listen to the speech and translate it INSTANTLY and CONTINUOUSLY into ${nativeLang.name}. 
-        Do not wait for pauses. Start immediately and don't stop. Output ONLY translation.`;
+        // SIMULTANEOUS TRANSLATION - הרצאה
+        sysInst = `LECTURE INTERPRETER. Translate everything you hear into ${nativeLang.name} immediately. Do not stop. This is for movies/lectures.`;
       } else if (selectedScenario.id === 'casual') {
         // CHAT
-        sysInst = `Act as a friendly chat partner. Speak ONLY in ${targetLang.name}. Do not translate or correct me.`;
+        sysInst = `Chat partner. Speak ONLY in ${targetLang.name}. Natural conversation on any topic.`;
       } else if (selectedScenario.id === 'learn') {
         // LEARN
-        sysInst = `Act as a language tutor. Speak in ${targetLang.name}. After every response, provide a short grammar correction and pronunciation tip in brackets [].`;
+        sysInst = `Language Tutor. Speak in ${targetLang.name}. Correct my syntax, grammar, and pronunciation in every response using brackets [].`;
       }
 
       const sessionPromise = ai.live.connect({
@@ -116,14 +108,6 @@ const App: React.FC = () => {
             scriptProcessor.connect(inputAudioContextRef.current!.destination);
           },
           onmessage: async (m: LiveServerMessage) => {
-            if (m.serverContent?.inputTranscription) setInterimUserText(prev => prev + m.serverContent!.inputTranscription!.text);
-            if (m.serverContent?.outputTranscription) setInterimModelText(prev => prev + m.serverContent!.outputTranscription!.text);
-            
-            if (m.serverContent?.turnComplete) {
-              setTranscript(prev => [...prev, { role: 'user', text: interimUserText, timestamp: new Date() }, { role: 'model', text: interimModelText, timestamp: new Date() }]);
-              setInterimUserText(''); setInterimModelText('');
-            }
-
             const audioData = m.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
             if (audioData) {
               setIsSpeaking(true);
@@ -143,18 +127,18 @@ const App: React.FC = () => {
         config: { 
           responseModalities: [Modality.AUDIO], 
           systemInstruction: sysInst,
-          generationConfig: { temperature: 0.4 },
+          generationConfig: { temperature: 0.3 },
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } } }
         }
       });
       activeSessionRef.current = await sessionPromise;
-    } catch (e) { setError('Failed'); setStatus(ConnectionStatus.ERROR); }
+    } catch (e) { setError('Failed to start'); setStatus(ConnectionStatus.ERROR); }
   };
 
   if (hasKey === null) return <div className="h-screen bg-slate-950 flex items-center justify-center"><div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" /></div>;
 
   return (
-    <div className={`h-screen bg-slate-950 flex flex-col text-slate-200 overflow-hidden ${isRTL ? 'rtl text-right' : 'ltr text-left'}`}>
+    <div className={`h-screen bg-slate-950 flex flex-col text-slate-200 overflow-hidden font-['Inter'] ${isRTL ? 'rtl' : 'ltr'}`}>
       <header className="p-4 flex items-center justify-between bg-slate-900/60 border-b border-white/5 backdrop-blur-2xl z-50">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg"><Headphones size={20} /></div>
@@ -163,11 +147,11 @@ const App: React.FC = () => {
             <span className={`text-[10px] font-black uppercase ${status === 'CONNECTED' ? 'text-emerald-400' : 'text-slate-400'}`}>{status}</span>
           </div>
         </div>
-        <button onClick={() => setTranscript([])} className="p-2 text-slate-500 hover:text-white"><Trash2 size={18} /></button>
       </header>
 
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden">
-        <div className="w-full md:w-[450px] flex flex-col p-6 gap-6 bg-slate-900/30 border-r border-white/5 overflow-y-auto scrollbar-thin">
+        {/* פאנל שליטה שמאלי */}
+        <div className="w-full md:w-[480px] flex flex-col p-6 gap-6 bg-slate-900/30 border-r border-white/5 overflow-y-auto">
           <div className="w-full bg-slate-900/90 rounded-[2rem] border border-white/10 p-5 flex flex-col gap-4 shadow-xl">
             <div className="flex flex-col gap-1">
               <div className="flex items-center gap-2 bg-slate-800/40 p-2 rounded-[1.5rem]">
@@ -179,7 +163,7 @@ const App: React.FC = () => {
                 </div>
                 <ChevronRight size={16} className={`text-indigo-500 mt-4 ${isRTL ? 'rotate-180' : ''}`} />
                 <div className="flex-1 text-center">
-                   <label className="text-[10px] font-black uppercase text-indigo-400 block mb-1">{ui.target}</label>
+                   <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">{ui.target}</label>
                   <select value={targetLang.code} onChange={e => setTargetLang(SUPPORTED_LANGUAGES.find(l => l.code === e.target.value)!)} className="bg-slate-900 border-none rounded-xl py-2 text-sm font-bold text-center outline-none w-full">
                     {SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}
                   </select>
@@ -189,11 +173,12 @@ const App: React.FC = () => {
             
             <div className="grid grid-cols-2 gap-3">
               {SCENARIOS.map(s => {
-                const label = ui.scenarios[s.id as keyof typeof ui.scenarios] || s.title;
+                const isTranslator = s.id === 'translator';
+                const label = isTranslator ? ui.scenarios.translator : ui.scenarios[s.id as keyof typeof ui.scenarios] || s.title;
                 return (
-                  <button key={s.id} onClick={() => setSelectedScenario(s)} className={`py-6 px-2 rounded-2xl flex flex-col items-center gap-2 transition-all ${selectedScenario.id === s.id ? 'bg-indigo-600 text-white shadow-lg' : 'bg-slate-800/40 text-slate-500'}`}>
-                    <span className="text-3xl">{s.icon}</span>
-                    <span className="font-black uppercase tracking-tighter text-center leading-tight text-base">
+                  <button key={s.id} onClick={() => setSelectedScenario(s)} className={`py-10 px-2 rounded-3xl flex flex-col items-center gap-3 transition-all ${selectedScenario.id === s.id ? 'bg-indigo-600 text-white shadow-2xl scale-105' : 'bg-slate-800/40 text-slate-500'}`}>
+                    <span className="text-4xl">{s.icon}</span>
+                    <span className="font-black uppercase tracking-tighter text-center leading-none text-2xl">
                       {label}
                     </span>
                   </button>
@@ -204,23 +189,36 @@ const App: React.FC = () => {
 
           <div className="flex flex-col items-center justify-center gap-6 py-4">
             <Avatar state={status !== ConnectionStatus.CONNECTED ? 'idle' : isSpeaking ? 'speaking' : isMuted ? 'thinking' : 'listening'} />
-            <button onClick={status === ConnectionStatus.CONNECTED ? stopConversation : startConversation} className="bg-indigo-600 px-10 py-5 rounded-full font-black text-xl shadow-xl flex items-center gap-3 hover:bg-indigo-500 transition-all">
-              <Mic size={24} /> {status === ConnectionStatus.CONNECTED ? ui.stop : ui.start}
+            <button onClick={status === ConnectionStatus.CONNECTED ? stopConversation : startConversation} className="bg-indigo-600 px-12 py-6 rounded-full font-black text-2xl shadow-xl flex items-center gap-3 hover:bg-indigo-500 transition-all active:scale-95">
+              <Mic size={32} /> {status === ConnectionStatus.CONNECTED ? ui.stop : ui.start}
             </button>
             {(isSpeaking || (status === ConnectionStatus.CONNECTED && !isMuted)) && <AudioVisualizer isActive={true} color={isSpeaking ? "#6366f1" : "#10b981"} />}
           </div>
         </div>
 
-        <div className="flex-1 flex flex-col bg-slate-950 p-4 md:p-8 overflow-hidden">
-          <div className="flex items-center justify-between mb-4 px-2">
-            <h3 className="text-sm font-black uppercase text-slate-500">{ui.feed}</h3>
-            <span className="text-[10px] font-black bg-slate-800 px-2 py-1 rounded text-slate-400">{transcript.length} {ui.logs}</span>
-          </div>
-          <div className="flex-1 overflow-y-auto flex flex-col gap-2">
-            {transcript.map((entry, idx) => <transcriptitem key={idx} entry={entry} />)}
-            {interimUserText && <transcriptitem entry={{role: 'user', text: interimUserText, timestamp: new Date()}} />}
-            {interimModelText && <transcriptitem entry={{role: 'model', text: interimModelText, timestamp: new Date()}} />}
-            <div ref={transcriptEndRef} />
+        {/* מרחב הפרסום - מחליף את התמלול */}
+        <div className="flex-1 bg-slate-950 p-4 md:p-8 overflow-hidden flex flex-col gap-6">
+          <div className="grid grid-cols-2 grid-rows-2 flex-1 gap-6">
+             {/* פרסומת מאיר גלעדי */}
+             <div className="bg-slate-900/50 rounded-[3rem] border border-white/5 p-8 flex flex-col items-center justify-center text-center shadow-inner group hover:border-indigo-500/50 transition-colors">
+                <div className="w-16 h-16 bg-indigo-600/20 rounded-full flex items-center justify-center mb-4 text-indigo-400 font-bold text-2xl">MG</div>
+                <h4 className="text-2xl font-black text-white mb-2">מאיר גלעדי</h4>
+                <p className="text-indigo-400 font-bold text-lg mb-4">מומחה לנדל"ן מסחרי</p>
+                <div className="flex flex-col gap-2">
+                  <span className="text-slate-300 font-bold text-xl tracking-widest">052-2530087</span>
+                  <a href="https://mgilady.wixsite.com/meirgilady" target="_blank" className="flex items-center gap-2 text-indigo-500 hover:text-white underline text-sm transition-colors mt-4">
+                    Visit Website <ExternalLink size={14} />
+                  </a>
+                </div>
+             </div>
+
+             {/* שאר משבצות הפרסום */}
+             {[1, 2, 3].map(i => (
+               <div key={i} className="bg-slate-900/20 rounded-[3rem] border border-white/5 flex items-center justify-center relative overflow-hidden group">
+                  <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <span className="text-slate-700 font-black text-3xl uppercase tracking-tighter rotate-12">{ui.adSpace}</span>
+               </div>
+             ))}
           </div>
         </div>
       </main>
