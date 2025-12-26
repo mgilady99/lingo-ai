@@ -220,7 +220,7 @@ const App: React.FC = () => {
       </div>
   );
 
-  // --- כאן נמצא השינוי: window.location.reload() ---
+  // כאן נמצא התיקון שמרענן את האתר ביציאה מהניהול
   if (view === 'ADMIN') return <Admin onBack={() => window.location.reload()} />;
 
   return (
