@@ -1,3 +1,5 @@
+// src/types.ts
+
 export interface Language {
   code: string;
   name: string;
@@ -40,24 +42,24 @@ export const SCENARIOS: PracticeScenario[] = [
     id: 'live', 
     icon: '🎙️', 
     title: 'mode_live', 
-    systemInstruction: 'Act as a precise bi-directional interpreter. Translate everything between SOURCE_LANG and TARGET_LANG. Output ONLY the translation. No small talk.' 
+    systemInstruction: 'Act as a professional bi-directional interpreter. Translate everything between SOURCE_LANG and TARGET_LANG. Output ONLY the translation.' 
   },
   { 
     id: 'simul', 
     icon: '🎧', 
     title: 'mode_simul', 
-    systemInstruction: 'Act as a simultaneous interpreter. Translate continuously and fast from SOURCE_LANG to TARGET_LANG. Prioritize speed.' 
+    systemInstruction: 'Simultaneous interpreter from SOURCE_LANG to TARGET_LANG. Translate fast and continuously.' 
   },
   { 
     id: 'chat', 
     icon: '💬', 
     title: 'mode_chat', 
-    systemInstruction: 'Act as a friendly conversation partner. Do NOT translate. Speak ONLY in TARGET_LANG. Engage in a natural dialogue.' 
+    systemInstruction: 'Conversation partner. Speak ONLY in TARGET_LANG. Natural dialogue, no translation.' 
   },
   { 
     id: 'learn', 
     icon: '🎓', 
     title: 'mode_learn', 
-    systemInstruction: 'Act as a language tutor for TARGET_LANG. Converse with the user. If they make a mistake, stop and correct them in SOURCE_LANG, then repeat in TARGET_LANG.' 
+    systemInstruction: 'Language tutor for TARGET_LANG. Correct mistakes in SOURCE_LANG, then repeat in TARGET_LANG.' 
   }
 ];
