@@ -33,13 +33,20 @@ const App: React.FC = () => {
   }, []);
 
   const startConversation = async () => {
-    // *** נקודת התיקון למפתח ה-API ***
-    // אם Cloudflare לא קורא את המשתנה, הדבק את המפתח שלך במקום המרכאות בשורה למטה:
-    // const apiKey = "AIzaSy..."; 
-    const apiKey = import.meta.env.VITE_API_KEY; 
+    // ---------------------------------------------------------
+    // אזור המפתח - כאן השינוי שעוקף את הבעיה
+    // ---------------------------------------------------------
+    
+    // שורה זו מבוטלת (בהערה):
+    // const apiKey = import.meta.env.VITE_API_KEY; 
 
-    if (!apiKey || apiKey === "undefined") {
-      alert("API Key is missing! Check console/Cloudflare.");
+    // *** תדביק את המפתח שלך בשורה למטה במקום הטקסט במרכאות ***
+    const apiKey = "AIzaSyBvxi9k8SjgfC_dY7qLSGgTJrxXf_Nug1A"; 
+
+    // ---------------------------------------------------------
+
+    if (!apiKey || apiKey.includes("AIzaSyBvxi9k8SjgfC_dY7qLSGgTJrxXf_Nug1A")) {
+      alert("נא להדביק את מפתח ה-API האמיתי בקובץ App.tsx בשורה 36");
       return;
     }
     
@@ -54,6 +61,8 @@ const App: React.FC = () => {
       outputAudioContextRef.current = new AudioContext();
 
       const ai = new GoogleGenAI(apiKey);
+      
+      // החיבור לגוגל עם כל התיקונים (קול, מודל, callbacks)
       const session = await ai.live.connect({
         model: "gemini-2.0-flash-exp",
         config: { 
@@ -61,13 +70,19 @@ const App: React.FC = () => {
           responseModalities: [Modality.AUDIO],
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } }
         },
-        // תיקון קריטי: מונע את השגיאה Uncaught TypeError: Cannot read properties of undefined (reading 'onmessage')
-        callbacks: { onopen: () => {}, onmessage: () => {}, onerror: () => {}, onclose: () => {} }
+        callbacks: { 
+          onopen: () => console.log("Connected"), 
+          onmessage: () => {}, 
+          onerror: (e) => console.error("Err", e), 
+          onclose: () => console.log("Closed") 
+        }
       });
       activeSessionRef.current = session;
 
+      // שליחת האודיו עם תיקון התדר ל-16kHz
       const source = inCtx.createMediaStreamSource(stream);
       const scriptProcessor = inCtx.createScriptProcessor(4096, 1, 1);
+      
       scriptProcessor.onaudioprocess = (e) => {
         if (activeSessionRef.current && activeSessionRef.current.send) {
           const pcmBase64 = createPcmBlob(e.inputBuffer.getChannelData(0), inCtx.sampleRate);
@@ -77,6 +92,7 @@ const App: React.FC = () => {
       source.connect(scriptProcessor);
       scriptProcessor.connect(inCtx.destination);
 
+      // קבלת האודיו וניגונו
       (async () => {
         try {
           if (!session.listen) return;
@@ -96,6 +112,7 @@ const App: React.FC = () => {
           }
         } catch(e) { stopConversation(); }
       })();
+
       setStatus(ConnectionStatus.CONNECTED);
     } catch (e: any) { stopConversation(); alert(`Connection failed: ${e.message}`); }
   };
@@ -115,11 +132,15 @@ const App: React.FC = () => {
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden">
         <div className="w-full md:w-[400px] flex flex-col p-4 gap-4 bg-slate-900/30 border-r border-white/5 shadow-2xl overflow-y-auto">
           <div className="bg-slate-900/90 rounded-[2rem] border border-white/10 p-6 flex flex-col gap-4">
-            <div className="bg-slate-800/40 p-4 rounded-2xl border border-white/5 flex items-center gap-3">
+            <div className="bg-slate-800/40 p-4 rounded-2xl border border-white/5">
+              <div className="flex items-center gap-3">
+                {/* עיצוב גדול py-4 */}
                 <select value={nativeLang.code} onChange={e => setNativeLang(SUPPORTED_LANGUAGES.find(l => l.code === e.target.value)!)} className="bg-slate-900 border border-white/10 rounded-xl px-4 py-4 text-sm font-bold w-full text-center">{SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}</select>
                 <ArrowLeftRight size={20} className="text-indigo-500 shrink-0" />
                 <select value={targetLang.code} onChange={e => setTargetLang(SUPPORTED_LANGUAGES.find(l => l.code === e.target.value)!)} className="bg-slate-900 border border-white/10 rounded-xl px-4 py-4 text-sm font-bold w-full text-center">{SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}</select>
+              </div>
             </div>
+            
             <div className="grid grid-cols-2 gap-3">
               {SCENARIOS.map(s => (
                 <button key={s.id} onClick={() => setSelectedScenario(s)} className={`py-6 rounded-3xl flex flex-col items-center gap-2 transition-all ${selectedScenario.id === s.id ? 'bg-indigo-600 text-white shadow-xl scale-105' : 'bg-slate-800/40 text-slate-500'}`}>
