@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from "react";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { GoogleGenAI } from "@google/genai";
 import { Mic, Headphones, ArrowLeftRight } from "lucide-react";
 import {
@@ -13,16 +13,19 @@ import AudioVisualizer from "./components/AudioVisualizer";
 import { translations } from "./translations";
 
 /**
- * ✅ Pages-only (Browser only)
- * - אין Live websocket session.send/listen
- * - מקליטים "קטע דיבור" עד שתיקה (VAD פשוט)
- * - שולחים בקשת GenerateContent אחת לקטע
- * - מעדיפים לקבל אודיו מהמודל; אם לא מגיע אודיו → fallback ל-SpeechSynthesis
+ * ✅ Pages-only (Browser)
+ * - No live session.send/listen.
+ * - Record audio continuously into chunks (MediaRecorder timeslice).
+ * - Detect voice + silence (VAD), then send ONE combined clip.
+ * - Gemini returns text; we speak with SpeechSynthesis.
+ * - Debug UI shows what happens.
  */
 
-// טיונינג לזיהוי שתיקה
-const SILENCE_MS_TO_STOP = 900; // כמה זמן של שקט כדי לעצור (ms)
-const RMS_THRESHOLD = 0.012; // רגישות לשקט (0.008–0.02 תלוי במיקרופון)
+// VAD tuning
+const RMS_THRESHOLD = 0.012; // 0.008–0.02 (depends mic)
+const SILENCE_MS_TO_STOP = 900; // silence duration to trigger send
+const MIN_SPEECH_MS = 450; // require at least this much voice time
+const TIMESLICE_MS = 250; // MediaRecorder chunk interval
 
 function isRtlLang(code: string) {
   return code === "he-IL" || code === "ar-SA";
@@ -45,21 +48,24 @@ function pickVoiceForLang(langCode: string): SpeechSynthesisVoice | null {
   return partial || null;
 }
 
-function speakText(text: string, langCode: string) {
+function speakText(text: string, langCode: string, onEnd?: () => void) {
   try {
     if (!("speechSynthesis" in window)) return;
+
     window.speechSynthesis.cancel();
     const utter = new SpeechSynthesisUtterance(text);
     utter.lang = langCode;
+
     const v = pickVoiceForLang(langCode);
     if (v) utter.voice = v;
-    window.speechSynthesis.speak(utter);
-  } catch {}
-}
 
-function playBase64AudioWav(base64: string) {
-  const a = new Audio(`data:audio/wav;base64,${base64}`);
-  a.play().catch(() => {});
+    utter.onend = () => onEnd?.();
+    utter.onerror = () => onEnd?.();
+
+    window.speechSynthesis.speak(utter);
+  } catch {
+    onEnd?.();
+  }
 }
 
 const App: React.FC = () => {
@@ -69,22 +75,53 @@ const App: React.FC = () => {
   const [selectedScenario, setSelectedScenario] = useState<PracticeScenario>(SCENARIOS[0]);
   const [isSpeaking, setIsSpeaking] = useState(false);
 
+  // Debug/UX
+  const [debugLine, setDebugLine] = useState<string>("");
+  const [lastTranslation, setLastTranslation] = useState<string>("");
+
   const micStreamRef = useRef<MediaStream | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
 
-  // VAD (silence detect)
-  const vadAudioCtxRef = useRef<AudioContext | null>(null);
+  // VAD
+  const vadCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const vadTimerRef = useRef<number | null>(null);
+
   const lastVoiceTsRef = useRef<number>(0);
+  const voiceStartedTsRef = useRef<number | null>(null);
+  const hasVoiceRef = useRef(false);
 
-  const t = (key: string) =>
-    translations[nativeLang.code]?.[key] || translations["en-US"]?.[key] || key;
+  // to avoid stale state in callbacks
+  const connectedRef = useRef(false);
+  useEffect(() => {
+    connectedRef.current = status === ConnectionStatus.CONNECTED;
+  }, [status]);
 
-  const dir = isRtlLang(nativeLang.code) ? "rtl" : "ltr";
+  const t = useCallback(
+    (key: string) =>
+      translations[nativeLang.code]?.[key] || translations["en-US"]?.[key] || key,
+    [nativeLang.code]
+  );
 
-  const cleanupVad = useCallback(() => {
+  const dir = useMemo(() => (isRtlLang(nativeLang.code) ? "rtl" : "ltr"), [nativeLang.code]);
+
+  // Load voices (some browsers load async)
+  useEffect(() => {
+    if (!("speechSynthesis" in window)) return;
+    const handler = () => {
+      // trigger load
+      window.speechSynthesis.getVoices();
+    };
+    handler();
+    window.speechSynthesis.onvoiceschanged = handler;
+    return () => {
+      // @ts-ignore
+      window.speechSynthesis.onvoiceschanged = null;
+    };
+  }, []);
+
+  const cleanupVAD = useCallback(() => {
     if (vadTimerRef.current) {
       window.clearInterval(vadTimerRef.current);
       vadTimerRef.current = null;
@@ -94,22 +131,22 @@ const App: React.FC = () => {
     } catch {}
     analyserRef.current = null;
 
-    if (vadAudioCtxRef.current) {
+    if (vadCtxRef.current) {
       try {
-        vadAudioCtxRef.current.close();
+        vadCtxRef.current.close();
       } catch {}
-      vadAudioCtxRef.current = null;
+      vadCtxRef.current = null;
     }
   }, []);
 
   const stopConversation = useCallback(() => {
-    setStatus(ConnectionStatus.DISCONNECTED);
-    setIsSpeaking(false);
+    setDebugLine("Stopped.");
+    connectedRef.current = false;
 
     try {
-      mediaRecorderRef.current?.stop();
+      recorderRef.current?.stop();
     } catch {}
-    mediaRecorderRef.current = null;
+    recorderRef.current = null;
 
     if (micStreamRef.current) {
       try {
@@ -119,45 +156,106 @@ const App: React.FC = () => {
     }
 
     chunksRef.current = [];
-    cleanupVad();
+    hasVoiceRef.current = false;
+    voiceStartedTsRef.current = null;
+
+    cleanupVAD();
 
     try {
       window.speechSynthesis?.cancel?.();
     } catch {}
-  }, [cleanupVad]);
 
-  const sendRecordingToGemini = useCallback(
+    setIsSpeaking(false);
+    setStatus(ConnectionStatus.DISCONNECTED);
+  }, [cleanupVAD]);
+
+  const startVAD = useCallback((stream: MediaStream) => {
+    cleanupVAD();
+
+    const ctx = new AudioContext();
+    vadCtxRef.current = ctx;
+
+    const src = ctx.createMediaStreamSource(stream);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 2048;
+    analyserRef.current = analyser;
+    src.connect(analyser);
+
+    const data = new Float32Array(analyser.fftSize);
+
+    lastVoiceTsRef.current = Date.now();
+    voiceStartedTsRef.current = null;
+    hasVoiceRef.current = false;
+
+    vadTimerRef.current = window.setInterval(() => {
+      const an = analyserRef.current;
+      const rec = recorderRef.current;
+      if (!an || !rec) return;
+      if (!connectedRef.current) return;
+
+      an.getFloatTimeDomainData(data);
+
+      let sum = 0;
+      for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
+      const rms = Math.sqrt(sum / data.length);
+
+      const now = Date.now();
+
+      if (rms > RMS_THRESHOLD) {
+        lastVoiceTsRef.current = now;
+        if (!hasVoiceRef.current) {
+          hasVoiceRef.current = true;
+          voiceStartedTsRef.current = now;
+          setDebugLine("Voice detected…");
+        }
+      }
+
+      // Only stop if we had voice, and silence long enough
+      if (hasVoiceRef.current && now - lastVoiceTsRef.current > SILENCE_MS_TO_STOP) {
+        const voiceStart = voiceStartedTsRef.current ?? now;
+        const voiceMs = lastVoiceTsRef.current - voiceStart;
+
+        if (voiceMs >= MIN_SPEECH_MS && rec.state === "recording") {
+          setDebugLine("Silence detected → sending segment…");
+          try {
+            rec.stop();
+          } catch {}
+        } else {
+          // reset if too short
+          hasVoiceRef.current = false;
+          voiceStartedTsRef.current = null;
+        }
+      }
+    }, 120);
+  }, [cleanupVAD]);
+
+  const sendToGemini = useCallback(
     async (audioBlob: Blob) => {
       const apiKey = import.meta.env.VITE_API_KEY;
       if (!apiKey || apiKey === "undefined") {
-        alert("API Key missing. Check Cloudflare Variables: VITE_API_KEY");
+        setDebugLine("API Key missing (VITE_API_KEY).");
         return;
       }
 
-      const ai = new GoogleGenAI({ apiKey });
+      try {
+        const ai = new GoogleGenAI({ apiKey });
 
-      const instructions = selectedScenario.systemInstruction
-        .replace(/SOURCE_LANG/g, nativeLang.name)
-        .replace(/TARGET_LANG/g, targetLang.name);
+        const instructions = selectedScenario.systemInstruction
+          .replace(/SOURCE_LANG/g, nativeLang.name)
+          .replace(/TARGET_LANG/g, targetLang.name);
 
-      // בקשה שמחזירה "עדיף אודיו", ואם לא—לפחות טקסט
-      const prompt = `
+        const prompt = `
 You are a real-time interpreter.
 ${instructions}
 
 Rules:
 - Understand the spoken content in ${nativeLang.name}.
-- Produce ONLY the translation in ${targetLang.name}.
-- No quotes, no explanations, no extra text.
-
-If you can respond with audio, do it.
+- Output ONLY the translation in ${targetLang.name}.
+- No quotes, no explanations, no extra words.
 `;
 
-      const base64Audio = await blobToBase64(audioBlob);
+        const base64Audio = await blobToBase64(audioBlob);
 
-      setIsSpeaking(true);
-      try {
-        // ⚠️ הערה: לא כל מודל מחזיר אודיו. לכן יש fallback.
         const res = await ai.models.generateContent({
           model: "gemini-2.0-flash",
           contents: [
@@ -174,85 +272,39 @@ If you can respond with audio, do it.
               ],
             },
           ],
-          // מנסים לבקש אודיו. אם המודל לא תומך, פשוט לא נקבל inlineData.
-          generationConfig: {
-            responseMimeType: "audio/wav",
-          },
         });
 
-        // 1) ניסיון לקבל אודיו
-        const audioData =
-          (res as any)?.candidates?.[0]?.content?.parts?.find((p: any) => p?.inlineData?.data)
-            ?.inlineData?.data;
-
-        if (audioData) {
-          playBase64AudioWav(audioData);
-          return;
-        }
-
-        // 2) אם אין אודיו—נחלץ טקסט ונדבר עם SpeechSynthesis
         const text =
+          // some SDK builds provide text()
           (res as any)?.text?.() ||
-          (res as any)?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text).filter(Boolean).join("") ||
+          (res as any)?.candidates?.[0]?.content?.parts
+            ?.map((p: any) => p?.text)
+            .filter(Boolean)
+            .join("") ||
           "";
 
         const clean = (text || "").trim();
-        if (clean) {
-          speakText(clean, targetLang.code);
-        } else {
-          console.warn("Gemini returned empty text/audio for this segment.");
+
+        if (!clean) {
+          setDebugLine("Gemini returned empty text. Try speaking longer/clearer.");
+          return;
         }
-      } catch (e) {
-        console.error("Gemini request failed:", e);
-      } finally {
-        setIsSpeaking(false);
+
+        setLastTranslation(clean);
+        setDebugLine("Speaking…");
+        setIsSpeaking(true);
+
+        speakText(clean, targetLang.code, () => {
+          setIsSpeaking(false);
+          setDebugLine("Listening…");
+        });
+      } catch (e: any) {
+        console.error(e);
+        setDebugLine(`Gemini error: ${e?.message || "unknown"}`);
       }
     },
     [nativeLang.name, selectedScenario.systemInstruction, targetLang.code, targetLang.name]
   );
-
-  const startVAD = useCallback((stream: MediaStream) => {
-    cleanupVad();
-
-    const ctx = new AudioContext();
-    vadAudioCtxRef.current = ctx;
-
-    const source = ctx.createMediaStreamSource(stream);
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = 2048;
-    analyserRef.current = analyser;
-
-    source.connect(analyser);
-
-    const data = new Float32Array(analyser.fftSize);
-    lastVoiceTsRef.current = Date.now();
-
-    vadTimerRef.current = window.setInterval(() => {
-      if (!analyserRef.current) return;
-
-      analyserRef.current.getFloatTimeDomainData(data);
-
-      // RMS
-      let sum = 0;
-      for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
-      const rms = Math.sqrt(sum / data.length);
-
-      const now = Date.now();
-      if (rms > RMS_THRESHOLD) {
-        lastVoiceTsRef.current = now; // יש קול
-      }
-
-      // אם יש שקט מספיק זמן → עוצרים הקלטה ו"שולחים"
-      if (now - lastVoiceTsRef.current > SILENCE_MS_TO_STOP) {
-        // stop once
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-          try {
-            mediaRecorderRef.current.stop();
-          } catch {}
-        }
-      }
-    }, 120);
-  }, [cleanupVad]);
 
   const startConversation = useCallback(async () => {
     const apiKey = import.meta.env.VITE_API_KEY;
@@ -264,74 +316,85 @@ If you can respond with audio, do it.
     try {
       stopConversation();
       setStatus(ConnectionStatus.CONNECTING);
+      setDebugLine("Requesting microphone…");
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       micStreamRef.current = stream;
 
-      // טוען voices (דפדפנים לעיתים טוענים באיחור)
-      try {
-        window.speechSynthesis?.getVoices?.();
-      } catch {}
-
-      chunksRef.current = [];
-
-      // חשוב: mimeType מפורש עוזר לעקביות
-      // אם הדפדפן לא תומך בזה, MediaRecorder יבחר לבד.
-      const options: MediaRecorderOptions = {};
+      // MediaRecorder options
+      const opts: MediaRecorderOptions = {};
       if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
-        options.mimeType = "audio/webm;codecs=opus";
+        opts.mimeType = "audio/webm;codecs=opus";
       }
 
-      const recorder = new MediaRecorder(stream, options);
-      mediaRecorderRef.current = recorder;
+      const rec = new MediaRecorder(stream, opts);
+      recorderRef.current = rec;
+      chunksRef.current = [];
 
-      recorder.ondataavailable = (e) => {
+      rec.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
       };
 
-      recorder.onstop = async () => {
-        // עצירה בגלל שקט או בגלל Stop ידני
-        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" });
+      rec.onerror = (e) => {
+        console.error("Recorder error", e);
+        setDebugLine("Recorder error.");
+      };
+
+      rec.onstop = async () => {
+        // combine chunks
+        const mime = rec.mimeType || "audio/webm";
+        const blob = new Blob(chunksRef.current, { type: mime });
+        const size = blob.size;
+
         chunksRef.current = [];
+        hasVoiceRef.current = false;
+        voiceStartedTsRef.current = null;
 
-        // אם כבר מנותק – לא שולחים
-        if (status === ConnectionStatus.DISCONNECTED) return;
+        // If disconnected, do nothing
+        if (!connectedRef.current) return;
 
-        // אם יש קטע קצרצר (למשל לא דיברו) לא שולחים
-        if (blob.size < 2000) {
-          // התחל מחדש להקשבה
-          if (mediaRecorderRef.current && status === ConnectionStatus.CONNECTED) {
-            try {
-              // reset VAD "שעון קול"
-              lastVoiceTsRef.current = Date.now();
-              mediaRecorderRef.current.start();
-            } catch {}
-          }
+        // If too small, restart recording and keep listening
+        if (size < 3000) {
+          setDebugLine("Segment too short… keep listening.");
+          try {
+            rec.start(TIMESLICE_MS);
+          } catch {}
           return;
         }
 
-        await sendRecordingToGemini(blob);
+        // send this segment
+        await sendToGemini(blob);
 
-        // מתחילים הקלטה מחדש כדי להמשיך "כמעט-לייב"
-        if (mediaRecorderRef.current && status === ConnectionStatus.CONNECTED) {
+        // restart recording for next segment
+        if (connectedRef.current) {
           try {
-            lastVoiceTsRef.current = Date.now();
-            mediaRecorderRef.current.start();
+            rec.start(TIMESLICE_MS);
+            setDebugLine("Listening…");
           } catch {}
         }
       };
 
-      // מתחילים
-      recorder.start();
+      // Start
+      connectedRef.current = true;
+      setStatus(ConnectionStatus.CONNECTED);
+      setDebugLine("Listening…");
+
+      // Start recording with timeslice so we always get chunks
+      rec.start(TIMESLICE_MS);
+
+      // Start VAD
       startVAD(stream);
 
-      setStatus(ConnectionStatus.CONNECTED);
+      // trigger voices load
+      try {
+        window.speechSynthesis?.getVoices?.();
+      } catch {}
     } catch (e: any) {
       console.error(e);
       stopConversation();
       alert(`Mic/Connection failed: ${e?.message || "Check permissions"}`);
     }
-  }, [sendRecordingToGemini, startVAD, status, stopConversation]);
+  }, [sendToGemini, startVAD, stopConversation]);
 
   return (
     <div
@@ -400,6 +463,18 @@ If you can respond with audio, do it.
                 </button>
               ))}
             </div>
+
+            {/* ✅ Debug panel (small, helpful) */}
+            <div className="bg-slate-800/30 border border-white/10 rounded-2xl p-4 text-sm">
+              <div className="font-bold text-slate-200">Status:</div>
+              <div className="text-slate-300">{debugLine || "—"}</div>
+              {lastTranslation ? (
+                <>
+                  <div className="mt-3 font-bold text-slate-200">Last translation:</div>
+                  <div className="text-slate-100 whitespace-pre-wrap">{lastTranslation}</div>
+                </>
+              ) : null}
+            </div>
           </div>
 
           <div className="flex flex-col items-center py-4 flex-1 justify-center relative">
@@ -427,10 +502,7 @@ If you can respond with audio, do it.
 
             {(isSpeaking || status === ConnectionStatus.CONNECTED) && (
               <div className="absolute bottom-8 w-full px-12">
-                <AudioVisualizer
-                  isActive={true}
-                  color={isSpeaking ? "#6366f1" : "#10b981"}
-                />
+                <AudioVisualizer isActive={true} color={isSpeaking ? "#6366f1" : "#10b981"} />
               </div>
             )}
           </div>
