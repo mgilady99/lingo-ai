@@ -19,7 +19,6 @@ export const decodeAudioData = (arrayBuffer: ArrayBuffer, audioCtx: AudioContext
   return buffer;
 };
 
-// תיקון Resampling ל-16kHz כפי שהציע Grok
 export const createPcmBlob = (float32Array: Float32Array, inputSampleRate: number): string => {
   const targetSampleRate = 16000;
   const ratio = inputSampleRate / targetSampleRate;
