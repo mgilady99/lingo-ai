@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenAI, Modality } from '@google/genai';
-import { Mic, Headphones, ExternalLink, ShieldCheck, Settings, KeyRound, LogOut, ArrowLeftRight } from 'lucide-react';
+import { Mic, Headphones, ExternalLink, ShieldCheck, Settings, LogOut, ArrowLeftRight } from 'lucide-react';
 import { ConnectionStatus, SUPPORTED_LANGUAGES, SCENARIOS, Language, PracticeScenario } from './types';
 import { decode, decodeAudioData, createPcmBlob } from './services/audioService';
 import Avatar from './components/Avatar';
@@ -30,20 +30,20 @@ const App: React.FC = () => {
   const t = (key: string) => translations[nativeLang.code]?.[key] || translations['en-US']?.[key] || key;
   const dir = nativeLang.code === 'he-IL' || nativeLang.code === 'ar-SA' ? 'rtl' : 'ltr';
 
-  // פונקציית התנתקות - התיקון הקריטי למסך הכחול
-  const handleLogout = () => {
+  // פונקציית התנתקות - מתקן את ה-ReferenceError "handleLogout is not defined"
+  const handleLogout = useCallback(() => {
     localStorage.removeItem('lingolive_user');
     setUserData(null);
     setView('LOGIN');
     if (activeSessionRef.current) stopConversation();
-  };
+  }, []);
 
-  useEffect(() => {
-    const saved = localStorage.getItem('lingolive_user');
-    if (saved) {
-      try { handleLoginSuccess(JSON.parse(saved), false); } catch (e) { localStorage.removeItem('lingolive_user'); }
-    }
-    fetch('/api/admin/settings').then(res => res.json()).then(data => { if(data.ads) setAds(data.ads); }).catch(() => {});
+  const stopConversation = useCallback(() => {
+    if (activeSessionRef.current) { try { activeSessionRef.current.close(); } catch (e) {} activeSessionRef.current = null; }
+    if (micStreamRef.current) { micStreamRef.current.getTracks().forEach(t => t.stop()); micStreamRef.current = null; }
+    sourcesRef.current.clear();
+    setStatus(ConnectionStatus.DISCONNECTED);
+    setIsSpeaking(false);
   }, []);
 
   const handleLoginSuccess = (user: any, save = true) => {
@@ -54,12 +54,12 @@ const App: React.FC = () => {
     setView('PRICING');
   };
 
-  const stopConversation = useCallback(() => {
-    if (activeSessionRef.current) { try { activeSessionRef.current.close(); } catch (e) {} activeSessionRef.current = null; }
-    if (micStreamRef.current) { micStreamRef.current.getTracks().forEach(t => t.stop()); micStreamRef.current = null; }
-    sourcesRef.current.clear();
-    setStatus(ConnectionStatus.DISCONNECTED);
-    setIsSpeaking(false);
+  useEffect(() => {
+    const saved = localStorage.getItem('lingolive_user');
+    if (saved) {
+      try { handleLoginSuccess(JSON.parse(saved), false); } catch (e) { localStorage.removeItem('lingolive_user'); }
+    }
+    fetch('/api/admin/settings').then(res => res.json()).then(data => { if(data.ads) setAds(data.ads); }).catch(() => {});
   }, []);
 
   const startConversation = async () => {
@@ -75,76 +75,77 @@ const App: React.FC = () => {
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       micStreamRef.current = stream;
-      
+
+      const ai = new GoogleGenAI(apiKey);
       const instructions = selectedScenario.systemInstruction
         .replace(/SOURCE_LANG/g, nativeLang.name)
         .replace(/TARGET_LANG/g, targetLang.name);
 
-      const ai = new GoogleGenAI(apiKey);
-      const model = ai.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
-      
-      const session = await model.startChat({
-        history: [{ role: "user", parts: [{ text: instructions }] }]
-      });
-      
-      // הגדרת ה-Live Session בצורה שתומכת בשידור בינארי
-      activeSessionRef.current = await ai.live.connect({
+      // חיבור Live יציב עם המתנה
+      const session = await ai.live.connect({
         model: "gemini-2.0-flash-exp",
         config: { 
-            systemInstruction: instructions,
-            responseModalities: [Modality.AUDIO]
+          systemInstruction: instructions,
+          responseModalities: [Modality.AUDIO],
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } } }
         }
       });
+      activeSessionRef.current = session;
 
       const source = inputAudioContextRef.current!.createMediaStreamSource(stream);
       const scriptProcessor = inputAudioContextRef.current!.createScriptProcessor(2048, 1, 1);
       
       scriptProcessor.onaudioprocess = (e) => {
-          if (activeSessionRef.current) {
-              const pcmData = createPcmBlob(e.inputBuffer.getChannelData(0));
-              // תיקון המבנה: שליחת אובייקט מדיה תקני למניעת שגיאת Blob
-              activeSessionRef.current.send({
-                realtimeInput: {
-                  mediaChunks: [{
-                    mimeType: "audio/pcm;rate=16000",
-                    data: pcmData
-                  }]
-                }
-              });
-          }
+        if (activeSessionRef.current) {
+          const pcmData = createPcmBlob(e.inputBuffer.getChannelData(0));
+          // תיקון המבנה: שליחת אובייקט מדיה כפי שנדרש למניעת שגיאת "Unsupported blob type"
+          activeSessionRef.current.send({
+            realtimeInput: {
+              mediaChunks: [{
+                mimeType: "audio/pcm;rate=16000",
+                data: pcmData
+              }]
+            }
+          });
+        }
       };
       source.connect(scriptProcessor);
       scriptProcessor.connect(inputAudioContextRef.current!.destination);
 
       (async () => {
-          try {
-            for await (const msg of activeSessionRef.current.listen()) {
-                const audio = msg.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-                if (audio) {
-                    setIsSpeaking(true);
-                    const outCtx = outputAudioContextRef.current!;
-                    nextStartTimeRef.current = Math.max(nextStartTimeRef.current, outCtx.currentTime);
-                    const buffer = decodeAudioData(decode(audio), outCtx, 24000);
-                    const audioSource = outCtx.createBufferSource();
-                    audioSource.buffer = buffer; 
-                    audioSource.connect(outCtx.destination);
-                    audioSource.onended = () => { 
-                        sourcesRef.current.delete(audioSource); 
-                        if (sourcesRef.current.size === 0) setIsSpeaking(false); 
-                    };
-                    audioSource.start(nextStartTimeRef.current);
-                    nextStartTimeRef.current += buffer.duration;
-                    sourcesRef.current.add(audioSource);
-                }
+        try {
+          for await (const msg of session.listen()) {
+            const audio = msg.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
+            if (audio) {
+              setIsSpeaking(true);
+              const outCtx = outputAudioContextRef.current!;
+              nextStartTimeRef.current = Math.max(nextStartTimeRef.current, outCtx.currentTime);
+              const buffer = decodeAudioData(decode(audio), outCtx, 24000);
+              const audioSource = outCtx.createBufferSource();
+              audioSource.buffer = buffer; 
+              audioSource.connect(outCtx.destination);
+              audioSource.onended = () => { 
+                sourcesRef.current.delete(audioSource); 
+                if (sourcesRef.current.size === 0) setIsSpeaking(false); 
+              };
+              audioSource.start(nextStartTimeRef.current);
+              nextStartTimeRef.current += buffer.duration;
+              sourcesRef.current.add(audioSource);
             }
-          } catch(e) { stopConversation(); }
+          }
+        } catch(e) { stopConversation(); }
       })();
       setStatus(ConnectionStatus.CONNECTED);
-    } catch (e) { setStatus(ConnectionStatus.DISCONNECTED); }
+    } catch (e) { setStatus(ConnectionStatus.DISCONNECTED); console.error(e); }
   };
 
   if (view === 'LOGIN') return <Login onLoginSuccess={handleLoginSuccess} nativeLang={nativeLang} setNativeLang={setNativeLang} t={t} />;
-  if (view === 'PRICING') return <Pricing onPlanSelect={() => setView('APP')} userEmail={userData?.email} t={t} />;
+  if (view === 'PRICING') return (
+    <div className={`relative h-screen ${dir}`} dir={dir}>
+      <Pricing onPlanSelect={() => setView('APP')} userEmail={userData?.email} t={t} />
+      <button onClick={handleLogout} className="fixed top-4 left-4 bg-slate-800 text-white px-4 py-2 rounded-full font-bold text-xs"><LogOut size={14}/> {t('logout')}</button>
+    </div>
+  );
   if (view === 'ADMIN') return <Admin onBack={() => window.location.reload()} />;
 
   return (
@@ -159,9 +160,10 @@ const App: React.FC = () => {
           <button onClick={handleLogout} className="text-xs text-slate-500 hover:text-white underline">{t('logout')}</button>
         </div>
       </header>
+
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden">
         <div className="w-full md:w-[450px] flex flex-col p-4 gap-4 bg-slate-900/30 border-r border-white/5">
-          <div className="bg-slate-900/90 rounded-[2rem] border border-white/10 p-5 flex flex-col gap-4">
+          <div className="bg-slate-900/90 rounded-[2rem] border border-white/10 p-5 flex flex-col gap-4 shadow-2xl">
             <div className="bg-slate-800/40 p-3 rounded-2xl">
               <div className="flex justify-between px-2 mb-2 text-[10px] font-black text-indigo-300 uppercase"><span>{t('label_native')}</span><span>{t('label_target')}</span></div>
               <div className="flex items-center gap-2">
@@ -172,22 +174,25 @@ const App: React.FC = () => {
             </div>
             <div className="grid grid-cols-2 gap-3">
               {SCENARIOS.map(s => (
-                <button key={s.id} onClick={() => setSelectedScenario(s)} className={`py-4 rounded-2xl flex flex-col items-center gap-2 transition-all ${selectedScenario.id === s.id ? 'bg-indigo-600 text-white shadow-xl' : 'bg-slate-800/40 text-slate-500'}`}><span className="text-2xl">{s.icon}</span><span className="text-xs font-black uppercase text-center px-1">{t(s.title)}</span></button>
+                <button key={s.id} onClick={() => setSelectedScenario(s)} className={`py-6 rounded-2xl flex flex-col items-center gap-3 transition-all ${selectedScenario.id === s.id ? 'bg-indigo-600 text-white shadow-xl scale-[1.05]' : 'bg-slate-800/40 text-slate-500 hover:bg-slate-700'}`}>
+                  <span className="text-3xl">{s.icon}</span>
+                  <span className="text-lg font-black uppercase text-center px-1 leading-tight">{t(s.title)}</span>
+                </button>
               ))}
             </div>
           </div>
           <div className="flex flex-col items-center py-6 flex-1 justify-center relative">
             <Avatar state={status === ConnectionStatus.CONNECTED ? (isSpeaking ? 'speaking' : 'listening') : 'idle'} />
-            <button onClick={status === ConnectionStatus.CONNECTED ? stopConversation : startConversation} className={`mt-8 px-10 py-5 rounded-full font-black text-xl shadow-2xl flex items-center gap-3 active:scale-95 ${status === ConnectionStatus.CONNECTED ? 'bg-red-500' : 'bg-indigo-600'}`}><Mic size={24} /> {status === ConnectionStatus.CONNECTED ? t('stop_conversation') : t('start_conversation')}</button>
+            <button onClick={status === ConnectionStatus.CONNECTED ? stopConversation : startConversation} className={`mt-8 px-12 py-6 rounded-full font-black text-2xl shadow-2xl flex items-center gap-3 transition-all active:scale-95 ${status === ConnectionStatus.CONNECTED ? 'bg-red-500' : 'bg-indigo-600 hover:bg-indigo-500'}`}><Mic size={32} /> {status === ConnectionStatus.CONNECTED ? t('stop_conversation') : t('start_conversation')}</button>
             {(isSpeaking || status === ConnectionStatus.CONNECTED) && <AudioVisualizer isActive={true} color={isSpeaking ? "#6366f1" : "#10b981"} />}
           </div>
         </div>
-        <div className="hidden md:flex flex-1 bg-slate-950 p-8 flex-col gap-4 overflow-y-auto">
+        <div className="hidden md:flex flex-1 bg-slate-950 p-8 flex-col gap-4 overflow-y-auto items-center">
            {ads.filter(ad => ad.is_active).map(ad => (
-               <div key={ad.slot_id} className="w-full max-w-sm bg-slate-900 rounded-[2rem] border border-white/5 p-6 text-center shadow-xl">
-                 {ad.image_url && <img src={ad.image_url} alt={ad.title} className="w-full h-32 object-cover rounded-xl mb-4" />}
-                 <h4 className="text-xl font-bold text-white mb-2">{ad.title}</h4>
-                 <a href={ad.target_url} target="_blank" className="mt-2 bg-indigo-600/20 text-indigo-400 px-6 py-2 rounded-lg inline-flex items-center gap-2 font-bold text-sm">Link <ExternalLink size={14} /></a>
+               <div key={ad.slot_id} className="w-full max-w-md bg-slate-900 rounded-[2rem] border border-white/5 p-6 text-center shadow-xl hover:border-indigo-500/30 transition-colors">
+                 {ad.image_url && <img src={ad.image_url} alt={ad.title} className="w-full h-40 object-cover rounded-2xl mb-4" />}
+                 <h4 className="text-2xl font-black text-white mb-2">{ad.title}</h4>
+                 <a href={ad.target_url} target="_blank" className="mt-4 bg-indigo-600/20 text-indigo-400 px-8 py-3 rounded-xl inline-flex items-center gap-2 font-black text-lg hover:bg-indigo-600 hover:text-white transition-all">Visit <ExternalLink size={20} /></a>
                </div>
            ))}
         </div>
