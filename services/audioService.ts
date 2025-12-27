@@ -1,5 +1,4 @@
 // src/services/audioService.ts
-
 export const decode = (base64: string): ArrayBuffer => {
   const binaryString = atob(base64);
   const bytes = new Uint8Array(binaryString.length);
@@ -9,11 +8,7 @@ export const decode = (base64: string): ArrayBuffer => {
   return bytes.buffer;
 };
 
-export const decodeAudioData = (
-  arrayBuffer: ArrayBuffer,
-  audioCtx: AudioContext,
-  sampleRate: number = 24000
-): AudioBuffer => {
+export const decodeAudioData = (arrayBuffer: ArrayBuffer, audioCtx: AudioContext, sampleRate: number = 24000): AudioBuffer => {
   const dataView = new DataView(arrayBuffer);
   const length = arrayBuffer.byteLength / 2;
   const audioBuffer = audioCtx.createBuffer(1, length, sampleRate);
