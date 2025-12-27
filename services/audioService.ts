@@ -1,4 +1,3 @@
-// src/services/audioService.ts
 export const decode = (base64: string): ArrayBuffer => {
   const binaryString = atob(base64);
   const bytes = new Uint8Array(binaryString.length);
@@ -14,6 +13,7 @@ export const decodeAudioData = (arrayBuffer: ArrayBuffer, audioCtx: AudioContext
   return buffer;
 };
 
+// תיקון קריטי: המרת תדר ל-16kHz
 export const createPcmBlob = (float32Array: Float32Array, inputSampleRate: number): string => {
   const targetSampleRate = 16000;
   const ratio = inputSampleRate / targetSampleRate;
