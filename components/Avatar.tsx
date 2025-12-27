@@ -1,32 +1,19 @@
-
 import React from 'react';
 
-interface AvatarProps { state: 'idle' | 'listening' | 'speaking' | 'thinking'; }
+interface AvatarProps { state: 'idle' | 'listening' | 'speaking'; }
 
 const Avatar: React.FC<AvatarProps> = ({ state }) => {
-  const isSpeaking = state === 'speaking';
-  const isListening = state === 'listening';
-  
   return (
-    <div className="relative w-48 h-48 md:w-56 md:h-56 shrink-0">
-      <div className={`absolute inset-0 rounded-full blur-[50px] opacity-20 transition-all duration-700 ${isSpeaking ? 'bg-indigo-500 scale-150' : isListening ? 'bg-emerald-500 scale-125' : 'bg-slate-700 scale-100'}`} />
-      <div className="relative w-full h-full rounded-full border-4 border-slate-800 overflow-hidden bg-slate-900 z-10 shadow-[0_0_60px_rgba(0,0,0,0.5)]">
+    <div className="relative w-64 h-64 flex items-center justify-center">
+      <div className={`absolute inset-0 rounded-full border-4 border-indigo-500/20 ${state !== 'idle' ? 'animate-pulse' : ''}`} />
+      <div className={`w-48 h-48 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 shadow-2xl flex items-center justify-center overflow-hidden transition-all duration-500 ${state === 'speaking' ? 'scale-110' : 'scale-100'}`}>
         <img 
-          src="https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=600" 
-          className={`w-full h-full object-cover transition-transform duration-700 ${isSpeaking ? 'scale-110 brightness-110' : 'scale-100 grayscale-[0.2]'}`} 
-          alt="AI Partner"
+          src="https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&h=400&fit=crop" 
+          alt="AI Assistant" 
+          className={`w-full h-full object-cover transition-opacity duration-500 ${state === 'idle' ? 'opacity-80' : 'opacity-100'}`}
         />
-        {state === 'thinking' && (
-          <div className="absolute inset-0 bg-indigo-900/40 backdrop-blur-sm flex items-center justify-center gap-2">
-            <div className="w-2.5 h-2.5 bg-white rounded-full animate-bounce" />
-            <div className="w-2.5 h-2.5 bg-white rounded-full animate-bounce [animation-delay:0.2s]" />
-            <div className="w-2.5 h-2.5 bg-white rounded-full animate-bounce [animation-delay:0.4s]" />
-          </div>
-        )}
       </div>
-      {isSpeaking && (
-        <div className="absolute -inset-4 border-2 border-indigo-500 rounded-full animate-ping opacity-20" />
-      )}
+      {state === 'listening' && <div className="absolute -bottom-2 px-4 py-1 bg-green-500 text-white text-[10px] font-bold rounded-full animate-bounce">Listening...</div>}
     </div>
   );
 };
