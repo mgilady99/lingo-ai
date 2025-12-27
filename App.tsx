@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useCallback } from 'react';
 import { GoogleGenAI, Modality } from '@google/genai';
 import { Mic, Headphones, ArrowLeftRight } from 'lucide-react';
@@ -34,16 +35,17 @@ const App: React.FC = () => {
 
   const startConversation = async () => {
     // ************************************************************************
-    // חובה: מחק את הטקסט במרכאות והדבק את המפתח הארוך שלך (AIzaSy...)
+    // שלב קריטי: שים את המפתח שלך כאן בתוך המרכאות!
     // ************************************************************************
     const apiKey = "AIzaSyBvxi9k8SjgfC_dY7qLSGgTJrxXf_Nug1A";
     // ************************************************************************
 
-    // אין כאן שום בדיקת if - הקוד ירוץ ישר לחיבור
-    
     try {
       stopConversation();
       setStatus(ConnectionStatus.CONNECTING);
+
+      const ai = new GoogleGenAI(apiKey);
+      
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       micStreamRef.current = stream;
 
@@ -51,8 +53,6 @@ const App: React.FC = () => {
       inputAudioContextRef.current = inCtx;
       outputAudioContextRef.current = new AudioContext();
 
-      const ai = new GoogleGenAI(apiKey);
-      
       const session = await ai.live.connect({
         model: "gemini-2.0-flash-exp",
         config: { 
