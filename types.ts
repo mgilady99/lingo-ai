@@ -25,16 +25,7 @@ export const SUPPORTED_LANGUAGES: Language[] = [
   { code: 'en-US', name: 'English', flag: '🇺🇸', voiceName: 'en-US-Journey-D' },
   { code: 'es-ES', name: 'Spanish', flag: '🇪🇸', voiceName: 'es-ES-ElviraNeural' },
   { code: 'fr-FR', name: 'French', flag: '🇫🇷', voiceName: 'fr-FR-DeniseNeural' },
-  { code: 'de-DE', name: 'German', flag: '🇩🇪', voiceName: 'de-DE-KatjaNeural' },
-  { code: 'it-IT', name: 'Italian', flag: '🇮🇹', voiceName: 'it-IT-ElsaNeural' },
-  { code: 'pt-BR', name: 'Portuguese', flag: '🇧🇷', voiceName: 'pt-BR-FranciscaNeural' },
-  { code: 'zh-CN', name: 'Chinese', flag: '🇨🇳', voiceName: 'zh-CN-XiaoxiaoNeural' },
-  { code: 'ja-JP', name: 'Japanese', flag: '🇯🇵', voiceName: 'ja-JP-NanamiNeural' },
-  { code: 'ko-KR', name: 'Korean', flag: '🇰🇷', voiceName: 'ko-KR-SunHiNeural' },
-  { code: 'ru-RU', name: 'Russian', flag: '🇷🇺', voiceName: 'ru-RU-SvetlanaNeural' },
-  { code: 'ar-SA', name: 'Arabic', flag: '🇸🇦', voiceName: 'ar-SA-ZariyahNeural' },
-  { code: 'hi-IN', name: 'Hindi', flag: '🇮🇳', voiceName: 'hi-IN-SwaraNeural' },
-  { code: 'nl-NL', name: 'Dutch', flag: '🇳🇱', voiceName: 'nl-NL-ColetteNeural' }
+  { code: 'ar-SA', name: 'Arabic', flag: '🇸🇦', voiceName: 'ar-SA-ZariyahNeural' }
 ];
 
 export const SCENARIOS: PracticeScenario[] = [
@@ -42,24 +33,24 @@ export const SCENARIOS: PracticeScenario[] = [
     id: 'live', 
     icon: '🎙️', 
     title: 'mode_live', 
-    systemInstruction: 'Professional Interpreter Mode: Translate exactly between SOURCE_LANG and TARGET_LANG. Output ONLY the translation.' 
+    systemInstruction: 'Act as a precise bi-directional interpreter. Translate exactly between SOURCE_LANG and TARGET_LANG. Output ONLY the translation. No small talk.' 
   },
   { 
     id: 'simul', 
     icon: '🎧', 
     title: 'mode_simul', 
-    systemInstruction: 'Simultaneous Interpretation Mode: Translate from SOURCE_LANG to TARGET_LANG as fast as possible. Prioritize speed and natural flow.' 
+    systemInstruction: 'Act as a simultaneous interpreter. Translate from SOURCE_LANG to TARGET_LANG as fast as possible. Prioritize speed.' 
   },
   { 
     id: 'chat', 
     icon: '💬', 
     title: 'mode_chat', 
-    systemInstruction: 'Friend Mode: Speak ONLY in TARGET_LANG. Engage in a human-like daily conversation. Do not translate.' 
+    systemInstruction: 'Act as a friendly conversation partner in TARGET_LANG. Do NOT translate. Just chat naturally.' 
   },
   { 
     id: 'learn', 
     icon: '🎓', 
     title: 'mode_learn', 
-    systemInstruction: 'Tutor Mode: Talk in TARGET_LANG. If the user makes a grammar mistake, correct them gently in SOURCE_LANG, then repeat in TARGET_LANG.' 
+    systemInstruction: 'Act as a language tutor for TARGET_LANG. If the user makes a mistake, stop and correct them in SOURCE_LANG, then repeat in TARGET_LANG.' 
   }
 ];
