@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useCallback } from 'react';
 import { GoogleGenAI, Modality } from '@google/genai';
 import { Mic, Headphones, ArrowLeftRight } from 'lucide-react';
@@ -33,14 +32,19 @@ const App: React.FC = () => {
     setIsSpeaking(false);
   }, []);
 
-  const startConversation = async () => {
+  const startConversation = async (AIzaSyBvxi9k8SjgfC_dY7qLSGgTJrxXf_Nug1A) => {
     // ************************************************************************
-    // שלב קריטי: שים את המפתח שלך כאן בתוך המרכאות!
+    // שים לב! הדבק את המפתח בתוך המרכאות בשורה למטה.
+    // וודא שאין רווחים מיותרים ושזה המפתח המלא שמתחיל ב-AIzaSy
     // ************************************************************************
-    const apiKey = "AIzaSyBvxi9k8SjgfC_dY7qLSGgTJrxXf_Nug1A";
+    const apiKey = "AIzaSyBvxi9k8SjgfC_dY7qLSGgTJrxXf_Nug1A"; 
     // ************************************************************************
 
     try {
+      if (!apiKey || apiKey === "YOUR_API_KEY_GOES_HERE" || apiKey === "") {
+         throw new Error("המפתח עדיין ריק או לא הוחלף בקובץ");
+      }
+
       stopConversation();
       setStatus(ConnectionStatus.CONNECTING);
 
