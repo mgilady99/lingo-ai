@@ -32,13 +32,7 @@ const App: React.FC = () => {
 
   const stopConversation = useCallback(() => {
     if (activeSessionRef.current) { try { activeSessionRef.current.close(); } catch (e) {} activeSessionRef.current = null; }
-    if (micStreamRef.current) {
-      micStreamRef.current.getTracks().forEach(track => {
-          track.stop(); // הפסקת המיקרופון פיזית
-          console.log("Mic track released");
-      });
-      micStreamRef.current = null;
-    }
+    if (micStreamRef.current) { micStreamRef.current.getTracks().forEach(t => t.stop()); micStreamRef.current = null; }
     sourcesRef.current.clear();
     setStatus(ConnectionStatus.DISCONNECTED);
     setIsSpeaking(false);
@@ -67,22 +61,17 @@ const App: React.FC = () => {
 
   const startConversation = async () => {
     const apiKey = import.meta.env.VITE_API_KEY;
-    if (!apiKey || apiKey === "undefined") return alert("Error: API Key missing in Build.");
+    if (!apiKey || apiKey === "undefined" || apiKey.length < 10) {
+        alert("שגיאת מערכת: מפתח ה-API לא הוזרק בבנייה. וודא שב-Cloudflare המשתנה נקרא VITE_API_KEY ובצע Retry Deployment.");
+        return;
+    }
     
     try {
-      stopConversation(); // ניקוי מקדים
+      stopConversation();
       setStatus(ConnectionStatus.CONNECTING);
       
-      // אבחון מיקרופון
-      let stream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        micStreamRef.current = stream;
-      } catch (e) {
-        alert("Microphone Error: Access denied. Please click the lock icon in the URL bar and allow microphone.");
-        setStatus(ConnectionStatus.DISCONNECTED);
-        return;
-      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      micStreamRef.current = stream;
 
       if (!inputAudioContextRef.current) inputAudioContextRef.current = new AudioContext();
       if (!outputAudioContextRef.current) outputAudioContextRef.current = new AudioContext();
@@ -94,15 +83,25 @@ const App: React.FC = () => {
         .replace(/SOURCE_LANG/g, nativeLang.name)
         .replace(/TARGET_LANG/g, targetLang.name);
 
-      const session = await ai.live.connect({
-        model: "gemini-2.0-flash-exp",
-        config: { 
-          systemInstruction: instructions,
-          responseModalities: [Modality.AUDIO],
-          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } } }
-        }
-      });
-      activeSessionRef.current = session;
+      // ניסיון חיבור עם תפיסת שגיאה מפורטת מגוגל
+      let session;
+      try {
+        session = await ai.live.connect({
+          model: "gemini-2.0-flash-exp",
+          config: { 
+            systemInstruction: instructions,
+            responseModalities: [Modality.AUDIO],
+            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } } }
+          }
+        });
+        activeSessionRef.current = session;
+      } catch (googleError: any) {
+        console.error("Full Google Error:", googleError);
+        alert(`שגיאת חיבור ל-AI: ${googleError.message || "גוגל דחתה את המפתח. וודא שהוא פעיל ב-AI Studio."}`);
+        setStatus(ConnectionStatus.DISCONNECTED);
+        stream.getTracks().forEach(t => t.stop());
+        return;
+      }
 
       const source = inputAudioContextRef.current!.createMediaStreamSource(stream);
       const scriptProcessor = inputAudioContextRef.current!.createScriptProcessor(4096, 1, 1);
@@ -149,7 +148,7 @@ const App: React.FC = () => {
       setStatus(ConnectionStatus.CONNECTED);
     } catch (e) { 
         setStatus(ConnectionStatus.DISCONNECTED); 
-        alert("AI Connection failed. Check if your API Key is active in Google AI Studio."); 
+        console.error(e);
     }
   };
 
@@ -170,8 +169,8 @@ const App: React.FC = () => {
           <span className="font-black text-xs uppercase tracking-tighter">LingoLive Pro</span>
         </div>
         <div className="flex items-center gap-2">
-          {userData?.role === 'ADMIN' && <button onClick={() => setView('ADMIN')} className="text-[10px] bg-white text-indigo-900 px-2 py-1 rounded-full font-bold">Admin</button>}
-          <button onClick={handleLogout} className="text-[10px] text-slate-500 hover:text-white underline">{t('logout')}</button>
+          {userData?.role === 'ADMIN' && <button onClick={() => setView('ADMIN')} className="text-[10px] bg-white text-indigo-900 px-2 py-1 rounded-full font-bold shadow-lg">Admin</button>}
+          <button onClick={handleLogout} className="text-[10px] text-slate-500 hover:text-white underline decoration-slate-700">{t('logout')}</button>
         </div>
       </header>
 
@@ -179,16 +178,15 @@ const App: React.FC = () => {
         <div className="w-full md:w-[400px] flex flex-col p-2 gap-2 bg-slate-900/30 border-r border-white/5 shadow-2xl">
           <div className="bg-slate-900/90 rounded-[1.5rem] border border-white/10 p-3 flex flex-col gap-2">
             
-            {/* שדות שפה מוגדלים ב-25% כלפי מטה */}
+            {/* שדות שפה מוגדלים ב-25% כלפי מטה (py-4) */}
             <div className="bg-slate-800/40 p-2 rounded-xl border border-white/5">
               <div className="flex items-center gap-2">
-                <select value={nativeLang.code} onChange={e => setNativeLang(SUPPORTED_LANGUAGES.find(l => l.code === e.target.value)!)} className="bg-slate-900 border border-white/10 rounded-lg px-2 py-4 text-sm font-bold w-full text-center transition-all focus:border-indigo-500">{SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}</select>
-                <ArrowLeftRight size={16} className="text-indigo-500 shrink-0" />
-                <select value={targetLang.code} onChange={e => setTargetLang(SUPPORTED_LANGUAGES.find(l => l.code === e.target.value)!)} className="bg-slate-900 border border-white/10 rounded-lg px-2 py-4 text-sm font-bold w-full text-center transition-all focus:border-indigo-500">{SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}</select>
+                <select value={nativeLang.code} onChange={e => setNativeLang(SUPPORTED_LANGUAGES.find(l => l.code === e.target.value)!)} className="bg-slate-900 border border-white/10 rounded-lg px-2 py-4 text-xs font-bold w-full text-center transition-all focus:border-indigo-500">{SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}</select>
+                <ArrowLeftRight size={14} className="text-indigo-500 shrink-0" />
+                <select value={targetLang.code} onChange={e => setTargetLang(SUPPORTED_LANGUAGES.find(l => l.code === e.target.value)!)} className="bg-slate-900 border border-white/10 rounded-lg px-2 py-4 text-xs font-bold w-full text-center transition-all focus:border-indigo-500">{SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}</select>
               </div>
             </div>
             
-            {/* כפתורים מוקטנים לטובת מקום במסך */}
             <div className="grid grid-cols-2 gap-2">
               {SCENARIOS.map(s => (
                 <button key={s.id} onClick={() => setSelectedScenario(s)} className={`py-4 rounded-xl flex flex-col items-center gap-1 transition-all ${selectedScenario.id === s.id ? 'bg-indigo-600 text-white shadow-xl scale-[1.02]' : 'bg-slate-800/40 text-slate-500 hover:bg-slate-800/70'}`}>
@@ -203,7 +201,7 @@ const App: React.FC = () => {
             <div className="scale-75 md:scale-90"><Avatar state={status === ConnectionStatus.CONNECTED ? (isSpeaking ? 'speaking' : 'listening') : 'idle'} /></div>
             <button 
               onClick={status === ConnectionStatus.CONNECTED ? stopConversation : startConversation} 
-              className={`mt-4 px-10 py-4 rounded-full font-black text-xl shadow-2xl flex items-center gap-3 active:scale-95 transition-all ${status === ConnectionStatus.CONNECTED ? 'bg-red-500 hover:bg-red-600' : 'bg-indigo-600 shadow-indigo-500/20'}`}
+              className={`mt-4 px-10 py-4 rounded-full font-black text-xl shadow-2xl flex items-center gap-3 active:scale-95 transition-all ${status === ConnectionStatus.CONNECTED ? 'bg-red-500 hover:bg-red-600' : 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-500/20'}`}
             >
                 <Mic size={24} /> {status === ConnectionStatus.CONNECTED ? t('stop_conversation') : t('start_conversation')}
             </button>
