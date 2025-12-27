@@ -13,9 +13,8 @@ import Avatar from "./components/Avatar";
 import AudioVisualizer from "./components/AudioVisualizer";
 import { translations } from "./translations";
 
-const LIVE_MODEL =
-  // מודל Live Audio מומלץ. אם אצלך לא עובד, תגיד לי ונחליף למודל אחר שתומך בחשבון שלך.
-  "gemini-2.5-flash-native-audio-preview-12-2025";
+// מומלץ: מודל Live Audio (אם בחשבון שלך לא זמין, תגיד לי ונחליף למודל אחר תואם)
+const LIVE_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025";
 
 const App: React.FC = () => {
   const [status, setStatus] = useState<ConnectionStatus>(
@@ -103,6 +102,36 @@ const App: React.FC = () => {
     setIsSpeaking(false);
   }, [hardCleanupAudioGraph]);
 
+  const playIncomingAudio = useCallback((base64Audio: string) => {
+    const outCtx = outputAudioContextRef.current;
+    if (!outCtx) return;
+
+    try {
+      setIsSpeaking(true);
+
+      nextStartTimeRef.current = Math.max(
+        nextStartTimeRef.current,
+        outCtx.currentTime
+      );
+
+      const buffer = decodeAudioData(decode(base64Audio), outCtx, 24000);
+      const audioSource = outCtx.createBufferSource();
+      audioSource.buffer = buffer;
+      audioSource.connect(outCtx.destination);
+
+      audioSource.onended = () => {
+        sourcesRef.current.delete(audioSource);
+        if (sourcesRef.current.size === 0) setIsSpeaking(false);
+      };
+
+      sourcesRef.current.add(audioSource);
+      audioSource.start(nextStartTimeRef.current);
+      nextStartTimeRef.current += buffer.duration;
+    } catch (e) {
+      console.error("❌ Failed to play audio", e);
+    }
+  }, []);
+
   const startConversation = useCallback(async () => {
     const apiKey = import.meta.env.VITE_API_KEY;
 
@@ -156,17 +185,56 @@ const App: React.FC = () => {
 
       activeSessionRef.current = session;
 
+      // ✅ IMPORTANT:
+      // Live API הוא event-driven. אין session.listen().
+      // אנחנו מאזינים לתגובות דרך אירוע "response" (או onmessage, תלוי בגרסת SDK).
+      const attachResponseHandler = () => {
+        // גרסה A: אם יש event emitter
+        if (typeof session.on === "function") {
+          session.on("response", (msg: any) => {
+            const audio =
+              msg?.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
+            if (audio) playIncomingAudio(audio);
+          });
+
+          // לפעמים האודיו מגיע גם דרך message
+          session.on("message", (msg: any) => {
+            const audio =
+              msg?.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
+            if (audio) playIncomingAudio(audio);
+          });
+
+          return true;
+        }
+
+        // גרסה B: אם יש onmessage handler
+        if ("onmessage" in session) {
+          session.onmessage = (msg: any) => {
+            const audio =
+              msg?.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
+            if (audio) playIncomingAudio(audio);
+          };
+          return true;
+        }
+
+        return false;
+      };
+
+      const ok = attachResponseHandler();
+      if (!ok) {
+        console.warn(
+          "⚠️ Could not attach response handler. SDK interface differs."
+        );
+      }
+
       // Build mic processing graph -> send PCM chunks
       const inCtx = inputAudioContextRef.current!;
-      const outCtx = outputAudioContextRef.current!;
-
       hardCleanupAudioGraph();
 
       const mediaSource = inCtx.createMediaStreamSource(stream);
       mediaSourceNodeRef.current = mediaSource;
 
-      // ScriptProcessor is old but works in many browsers.
-      // If needed later, we can upgrade to AudioWorklet.
+      // ScriptProcessorNode (deprecated warning is OK for now)
       const processor = inCtx.createScriptProcessor(4096, 1, 1);
       scriptProcessorRef.current = processor;
 
@@ -195,50 +263,11 @@ const App: React.FC = () => {
       mediaSource.connect(processor);
       processor.connect(inCtx.destination);
 
-      // Listen to responses (audio)
-      (async () => {
-        try {
-          for await (const msg of session.listen()) {
-            const audio =
-              msg?.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-
-            if (!audio) continue;
-
-            setIsSpeaking(true);
-
-            nextStartTimeRef.current = Math.max(
-              nextStartTimeRef.current,
-              outCtx.currentTime
-            );
-
-            const buffer = decodeAudioData(decode(audio), outCtx, 24000);
-
-            const audioSource = outCtx.createBufferSource();
-            audioSource.buffer = buffer;
-            audioSource.connect(outCtx.destination);
-
-            audioSource.onended = () => {
-              sourcesRef.current.delete(audioSource);
-              if (sourcesRef.current.size === 0) setIsSpeaking(false);
-            };
-
-            sourcesRef.current.add(audioSource);
-
-            audioSource.start(nextStartTimeRef.current);
-            nextStartTimeRef.current += buffer.duration;
-          }
-        } catch (e) {
-          console.error("❌ Listen loop crashed", e);
-          stopConversation();
-        }
-      })();
-
       setStatus(ConnectionStatus.CONNECTED);
     } catch (e: any) {
       console.error("❌ Connection failed", e);
       stopConversation();
 
-      // show more useful error
       const msg =
         e?.message ||
         e?.toString?.() ||
@@ -251,6 +280,7 @@ const App: React.FC = () => {
     stopConversation,
     targetLang.name,
     hardCleanupAudioGraph,
+    playIncomingAudio,
   ]);
 
   return (
