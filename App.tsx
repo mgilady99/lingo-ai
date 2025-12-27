@@ -31,28 +31,20 @@ const App: React.FC = () => {
     setStatus(ConnectionStatus.DISCONNECTED);
     setIsSpeaking(false);
   }, []);
-
-  const startConversation = async () => {
+const startConversation = async () => {
     // ---------------------------------------------------------
-    // אזור המפתח - כאן השינוי שעוקף את הבעיה
+    // הדבקת המפתח האמיתי שלך כאן:
     // ---------------------------------------------------------
-    
-    // שורה זו מבוטלת (בהערה):
-    // const apiKey = import.meta.env.VITE_API_KEY; 
-
-    // *** תדביק את המפתח שלך בשורה למטה במקום הטקסט במרכאות ***
     const apiKey = "AIzaSyBvxi9k8SjgfC_dY7qLSGgTJrxXf_Nug1A"; 
+    // (כמובן, שים כאן את המפתח המלא ללא קווים)
 
-    // ---------------------------------------------------------
 
-    if (!apiKey || apiKey.includes("AIzaSyBvxi9k8SjgfC_dY7qLSGgTJrxXf_Nug1A")) {
-      alert("נא להדביק את מפתח ה-API האמיתי בקובץ App.tsx בשורה 36");
-      return;
-    }
+    // *** מחקתי מכאן את ה-if שבודק אם המפתח תקין, כי עכשיו אנחנו בטוחים שהוא שם ***
     
     try {
       stopConversation();
       setStatus(ConnectionStatus.CONNECTING);
+  
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       micStreamRef.current = stream;
 
