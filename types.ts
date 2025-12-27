@@ -33,24 +33,24 @@ export const SCENARIOS: PracticeScenario[] = [
     id: 'live', 
     icon: '🎙️', 
     title: 'mode_live', 
-    systemInstruction: 'Act as a precise bi-directional interpreter. Translate exactly between SOURCE_LANG and TARGET_LANG. Output ONLY the translation. No small talk.' 
+    systemInstruction: 'Act as a precise bi-directional interpreter. Translate everything between SOURCE_LANG and TARGET_LANG. Output ONLY the translation.' 
   },
   { 
     id: 'simul', 
     icon: '🎧', 
     title: 'mode_simul', 
-    systemInstruction: 'Act as a simultaneous interpreter. Translate from SOURCE_LANG to TARGET_LANG as fast as possible. Prioritize speed.' 
+    systemInstruction: 'Simultaneous interpreter from SOURCE_LANG to TARGET_LANG. Translate fast and continuously.' 
   },
   { 
     id: 'chat', 
     icon: '💬', 
     title: 'mode_chat', 
-    systemInstruction: 'Act as a friendly conversation partner in TARGET_LANG. Do NOT translate. Just chat naturally.' 
+    systemInstruction: 'Conversation partner. Speak ONLY in TARGET_LANG. Natural dialogue, no translation.' 
   },
   { 
     id: 'learn', 
     icon: '🎓', 
     title: 'mode_learn', 
-    systemInstruction: 'Act as a language tutor for TARGET_LANG. If the user makes a mistake, stop and correct them in SOURCE_LANG, then repeat in TARGET_LANG.' 
+    systemInstruction: 'Language tutor for TARGET_LANG. Correct mistakes in SOURCE_LANG, then repeat in TARGET_LANG.' 
   }
 ];
