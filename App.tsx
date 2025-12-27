@@ -5,9 +5,11 @@ import { ConnectionStatus, SUPPORTED_LANGUAGES, SCENARIOS, Language, PracticeSce
 import { decode, decodeAudioData, createPcmBlob } from './services/audioService';
 import Avatar from './components/Avatar';
 import AudioVisualizer from './components/AudioVisualizer';
+import Admin from './components/Admin';
 import { translations } from './translations';
 
 const App: React.FC = () => {
+  const [view, setView] = useState<'APP' | 'ADMIN'>('APP');
   const [status, setStatus] = useState<ConnectionStatus>(ConnectionStatus.DISCONNECTED);
   const [targetLang, setTargetLang] = useState<Language>(SUPPORTED_LANGUAGES[0]);
   const [nativeLang, setNativeLang] = useState<Language>(SUPPORTED_LANGUAGES[1]);
@@ -31,9 +33,16 @@ const App: React.FC = () => {
   }, []);
 
   const startConversation = async () => {
-    const apiKey = import.meta.env.VITE_API_KEY;
-    if (!apiKey || apiKey === "undefined") return alert("API Key missing. Check Cloudflare Dashboard Variables.");
+    // *** נקודת התיקון למפתח ה-API ***
+    // אם Cloudflare לא קורא את המשתנה, הדבק את המפתח שלך במקום המרכאות בשורה למטה:
+    // const apiKey = "AIzaSy..."; 
+    const apiKey = import.meta.env.VITE_API_KEY; 
 
+    if (!apiKey || apiKey === "undefined") {
+      alert("API Key is missing! Check console/Cloudflare.");
+      return;
+    }
+    
     try {
       stopConversation();
       setStatus(ConnectionStatus.CONNECTING);
@@ -52,7 +61,7 @@ const App: React.FC = () => {
           responseModalities: [Modality.AUDIO],
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } }
         },
-        // תיקון קריסת ה-WebSocket (תמונה 117)
+        // תיקון קריטי: מונע את השגיאה Uncaught TypeError: Cannot read properties of undefined (reading 'onmessage')
         callbacks: { onopen: () => {}, onmessage: () => {}, onerror: () => {}, onclose: () => {} }
       });
       activeSessionRef.current = session;
@@ -61,8 +70,8 @@ const App: React.FC = () => {
       const scriptProcessor = inCtx.createScriptProcessor(4096, 1, 1);
       scriptProcessor.onaudioprocess = (e) => {
         if (activeSessionRef.current && activeSessionRef.current.send) {
-          const pcmData = createPcmBlob(e.inputBuffer.getChannelData(0), inCtx.sampleRate);
-          activeSessionRef.current.send({ realtimeInput: { mediaChunks: [{ data: pcmData, mimeType: 'audio/pcm;rate=16000' }] } });
+          const pcmBase64 = createPcmBlob(e.inputBuffer.getChannelData(0), inCtx.sampleRate);
+          activeSessionRef.current.send({ realtimeInput: { mediaChunks: [{ data: pcmBase64, mimeType: 'audio/pcm;rate=16000' }] } });
         }
       };
       source.connect(scriptProcessor);
@@ -91,6 +100,8 @@ const App: React.FC = () => {
     } catch (e: any) { stopConversation(); alert(`Connection failed: ${e.message}`); }
   };
 
+  if (view === 'ADMIN') return <Admin onBack={() => setView('APP')} />;
+
   return (
     <div className={`h-screen bg-slate-950 flex flex-col text-slate-200 overflow-hidden font-['Inter'] ${dir}`} dir={dir}>
       <header className="p-4 flex items-center justify-between bg-slate-900/60 border-b border-white/5 backdrop-blur-xl shrink-0">
@@ -98,20 +109,17 @@ const App: React.FC = () => {
           <div className="w-8 h-8 bg-indigo-600 rounded flex items-center justify-center shadow-lg"><Headphones size={20} /></div>
           <span className="font-black text-xl uppercase tracking-tighter">LingoLive Pro</span>
         </div>
+        <button onClick={() => setView('ADMIN')} className="text-xs bg-white text-indigo-900 px-3 py-1 rounded-full font-bold">Admin</button>
       </header>
 
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden">
         <div className="w-full md:w-[400px] flex flex-col p-4 gap-4 bg-slate-900/30 border-r border-white/5 shadow-2xl overflow-y-auto">
           <div className="bg-slate-900/90 rounded-[2rem] border border-white/10 p-6 flex flex-col gap-4">
-            <div className="bg-slate-800/40 p-4 rounded-2xl border border-white/5">
-              <div className="flex items-center gap-3">
-                {/* שדות שפה גדולים - py-4 */}
+            <div className="bg-slate-800/40 p-4 rounded-2xl border border-white/5 flex items-center gap-3">
                 <select value={nativeLang.code} onChange={e => setNativeLang(SUPPORTED_LANGUAGES.find(l => l.code === e.target.value)!)} className="bg-slate-900 border border-white/10 rounded-xl px-4 py-4 text-sm font-bold w-full text-center">{SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}</select>
                 <ArrowLeftRight size={20} className="text-indigo-500 shrink-0" />
                 <select value={targetLang.code} onChange={e => setTargetLang(SUPPORTED_LANGUAGES.find(l => l.code === e.target.value)!)} className="bg-slate-900 border border-white/10 rounded-xl px-4 py-4 text-sm font-bold w-full text-center">{SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}</select>
-              </div>
             </div>
-            
             <div className="grid grid-cols-2 gap-3">
               {SCENARIOS.map(s => (
                 <button key={s.id} onClick={() => setSelectedScenario(s)} className={`py-6 rounded-3xl flex flex-col items-center gap-2 transition-all ${selectedScenario.id === s.id ? 'bg-indigo-600 text-white shadow-xl scale-105' : 'bg-slate-800/40 text-slate-500'}`}>
