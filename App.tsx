@@ -33,7 +33,7 @@ const App: React.FC = () => {
 
   const stopConversation = useCallback(() => {
     if (activeSessionRef.current) { try { activeSessionRef.current.close(); } catch (e) {} activeSessionRef.current = null; }
-    if (micStreamRef.current) { micStreamRef.current.getTracks().forEach(track => track.stop()); micStreamRef.current = null; }
+    if (micStreamRef.current) { micStreamRef.current.getTracks().forEach(t => t.stop()); micStreamRef.current = null; }
     sourcesRef.current.clear();
     setStatus(ConnectionStatus.DISCONNECTED);
     setIsSpeaking(false);
@@ -62,13 +62,15 @@ const App: React.FC = () => {
 
   const startConversation = async () => {
     const apiKey = import.meta.env.VITE_API_KEY;
-    if (!apiKey || apiKey === "undefined") return alert("API Key missing in Cloudflare.");
+    if (!apiKey || apiKey === "undefined") {
+        alert("Critical: API Key is missing. Check Cloudflare environment variables.");
+        return;
+    }
     
     try {
-      stopConversation(); // שחרור מיקרופון קודם
+      stopConversation();
       setStatus(ConnectionStatus.CONNECTING);
       
-      // בקשת אישור מיקרופון (מכריח את הדפדפן לבדוק שוב)
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       micStreamRef.current = stream;
 
@@ -98,7 +100,7 @@ const App: React.FC = () => {
       scriptProcessor.onaudioprocess = (e) => {
         if (activeSessionRef.current) {
           const pcmData = createPcmBlob(e.inputBuffer.getChannelData(0));
-          // התיקון למניעת שגיאת ה-Blob
+          // התיקון הקריטי לשגיאת ה-Blob
           activeSessionRef.current.send({
             realtimeInput: {
               mediaChunks: [{
@@ -138,7 +140,7 @@ const App: React.FC = () => {
       setStatus(ConnectionStatus.CONNECTED);
     } catch (e) { 
         setStatus(ConnectionStatus.DISCONNECTED); 
-        alert("Connection failed. Please ensure microphone access is allowed in your browser settings."); 
+        alert("Mic/Connection failed. Grant permissions and check API Key."); 
     }
   };
 
@@ -159,8 +161,8 @@ const App: React.FC = () => {
           <span className="font-black text-xs uppercase tracking-tighter">LingoLive Pro</span>
         </div>
         <div className="flex items-center gap-2">
-          {userData?.role === 'ADMIN' && <button onClick={() => setView('ADMIN')} className="text-[10px] bg-white text-indigo-900 px-2 py-1 rounded-full font-bold shadow-lg">Admin</button>}
-          <button onClick={handleLogout} className="text-[10px] text-slate-500 hover:text-white underline decoration-slate-700">{t('logout')}</button>
+          {userData?.role === 'ADMIN' && <button onClick={() => setView('ADMIN')} className="text-[10px] bg-white text-indigo-900 px-2 py-1 rounded-full font-bold">Admin</button>}
+          <button onClick={handleLogout} className="text-[10px] text-slate-500 hover:text-white underline">{t('logout')}</button>
         </div>
       </header>
 
@@ -169,9 +171,9 @@ const App: React.FC = () => {
           <div className="bg-slate-900/90 rounded-[1.5rem] border border-white/10 p-3 flex flex-col gap-2 shadow-2xl">
             <div className="bg-slate-800/40 p-2 rounded-xl border border-white/5">
               <div className="flex items-center gap-2">
-                <select value={nativeLang.code} onChange={e => setNativeLang(SUPPORTED_LANGUAGES.find(l => l.code === e.target.value)!)} className="bg-slate-900 border border-white/10 rounded-lg px-1 py-1 text-[10px] font-bold w-full text-center transition-colors focus:border-indigo-500">{SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}</select>
-                <ArrowLeftRight size={12} className="text-indigo-500 shrink-0" />
-                <select value={targetLang.code} onChange={e => setTargetLang(SUPPORTED_LANGUAGES.find(l => l.code === e.target.value)!)} className="bg-slate-900 border border-white/10 rounded-lg px-1 py-1 text-[10px] font-bold w-full text-center transition-colors focus:border-indigo-500">{SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}</select>
+                <select value={nativeLang.code} onChange={e => setNativeLang(SUPPORTED_LANGUAGES.find(l => l.code === e.target.value)!)} className="bg-slate-900 border border-white/10 rounded-lg px-1 py-1 text-[10px] font-bold w-full text-center">{SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}</select>
+                <ArrowLeftRight size={12} className="text-indigo-500" />
+                <select value={targetLang.code} onChange={e => setTargetLang(SUPPORTED_LANGUAGES.find(l => l.code === e.target.value)!)} className="bg-slate-900 border border-white/10 rounded-lg px-1 py-1 text-[10px] font-bold w-full text-center">{SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}</select>
               </div>
             </div>
             
@@ -193,15 +195,12 @@ const App: React.FC = () => {
             <div className="scale-75 md:scale-90">
               <Avatar state={status === ConnectionStatus.CONNECTED ? (isSpeaking ? 'speaking' : 'listening') : 'idle'} />
             </div>
-            
             <button 
               onClick={status === ConnectionStatus.CONNECTED ? stopConversation : startConversation} 
               className={`mt-4 px-10 py-4 rounded-full font-black text-xl shadow-2xl flex items-center gap-3 active:scale-95 transition-all ${status === ConnectionStatus.CONNECTED ? 'bg-red-500 hover:bg-red-600' : 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-500/20'}`}
             >
-                <Mic size={24} /> 
-                {status === ConnectionStatus.CONNECTED ? t('stop_conversation') : t('start_conversation')}
+                <Mic size={24} /> {status === ConnectionStatus.CONNECTED ? t('stop_conversation') : t('start_conversation')}
             </button>
-            
             {(isSpeaking || status === ConnectionStatus.CONNECTED) && <AudioVisualizer isActive={true} color={isSpeaking ? "#6366f1" : "#10b981"} />}
           </div>
         </div>
@@ -220,4 +219,4 @@ const App: React.FC = () => {
   );
 };
 
-export default App; // מניעת שגיאת Build
+export default App;
