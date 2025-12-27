@@ -5,9 +5,11 @@ import { ConnectionStatus, SUPPORTED_LANGUAGES, SCENARIOS, Language, PracticeSce
 import { decode, decodeAudioData, createPcmBlob } from './services/audioService';
 import Avatar from './components/Avatar';
 import AudioVisualizer from './components/AudioVisualizer';
+// מחקתי את שורת ה-Admin כדי למנוע את הכישלון בבנייה
 import { translations } from './translations';
 
 const App: React.FC = () => {
+  // מחקתי את ה-state של ה-Admin
   const [status, setStatus] = useState<ConnectionStatus>(ConnectionStatus.DISCONNECTED);
   const [targetLang, setTargetLang] = useState<Language>(SUPPORTED_LANGUAGES[0]);
   const [nativeLang, setNativeLang] = useState<Language>(SUPPORTED_LANGUAGES[1]);
@@ -32,7 +34,7 @@ const App: React.FC = () => {
 
   const startConversation = async () => {
     // ************************************************************************
-    // הדבק את המפתח שלך כאן:
+    // חובה! הדבק את המפתח שלך כאן במקום הטקסט שבין המרכאות:
     // ************************************************************************
     const apiKey = "AIzaSyBvxi9k8SjgfC_dY7qLSGgTJrxXf_Nug1A"; 
     // ************************************************************************
@@ -41,7 +43,7 @@ const App: React.FC = () => {
       stopConversation();
       setStatus(ConnectionStatus.CONNECTING);
 
-      // שימוש ישיר במפתח כדי למנוע בעיות משתנים
+      // שימוש ישיר במפתח המודבק
       const ai = new GoogleGenAI(apiKey);
       
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
