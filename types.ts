@@ -29,18 +29,18 @@ export const SUPPORTED_LANGUAGES: Language[] = [
 export const SCENARIOS: PracticeScenario[] = [
   { 
     id: 'live', icon: '🎙️', title: 'mode_live', 
-    systemInstruction: 'Translate exactly between SOURCE_LANG and TARGET_LANG. Output ONLY translation.' 
+    systemInstruction: 'Act as a precise bi-directional interpreter between SOURCE_LANG and TARGET_LANG. Output ONLY the translation.' 
   },
   { 
     id: 'simul', icon: '🎧', title: 'mode_simul', 
-    systemInstruction: 'Simultaneous interpreter. Translate SOURCE_LANG to TARGET_LANG fast.' 
+    systemInstruction: 'Act as a simultaneous interpreter. Translate from SOURCE_LANG to TARGET_LANG as fast as possible.' 
   },
   { 
     id: 'chat', icon: '💬', title: 'mode_chat', 
-    systemInstruction: 'Conversation partner in TARGET_LANG. Natural chat only.' 
+    systemInstruction: 'Act as a friendly conversation partner in TARGET_LANG. Speak only in target language.' 
   },
   { 
     id: 'learn', icon: '🎓', title: 'mode_learn', 
-    systemInstruction: 'Tutor. Correct mistakes in SOURCE_LANG, then repeat in TARGET_LANG.' 
+    systemInstruction: 'Language tutor for TARGET_LANG. If the user makes a mistake, correct them gently in SOURCE_LANG, then repeat in TARGET_LANG.' 
   }
 ];
