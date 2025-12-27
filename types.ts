@@ -1,3 +1,5 @@
+// src/types.ts
+
 export interface Language {
   code: string;
   name: string;
@@ -40,24 +42,24 @@ export const SCENARIOS: PracticeScenario[] = [
     id: 'live', 
     icon: '🎙️', 
     title: 'mode_live', 
-    systemInstruction: 'You are a professional interpreter. Translate accurately between SOURCE_LANG and TARGET_LANG. Output ONLY the translation without any extra comments.' 
+    systemInstruction: 'Professional Interpreter Mode: Translate exactly between SOURCE_LANG and TARGET_LANG. Output ONLY the translation.' 
   },
   { 
     id: 'simul', 
     icon: '🎧', 
     title: 'mode_simul', 
-    systemInstruction: 'You are a simultaneous interpreter. Translate continuously from SOURCE_LANG to TARGET_LANG as the user speaks. Focus on speed and flow.' 
+    systemInstruction: 'Simultaneous Interpretation Mode: Translate from SOURCE_LANG to TARGET_LANG as fast as possible. Prioritize speed and natural flow.' 
   },
   { 
     id: 'chat', 
     icon: '💬', 
     title: 'mode_chat', 
-    systemInstruction: 'Engage in a natural conversation in TARGET_LANG. Do not translate. Act as a human friend chatting about daily life.' 
+    systemInstruction: 'Friend Mode: Speak ONLY in TARGET_LANG. Engage in a human-like daily conversation. Do not translate.' 
   },
   { 
     id: 'learn', 
     icon: '🎓', 
     title: 'mode_learn', 
-    systemInstruction: 'You are a language teacher for TARGET_LANG. If the user makes a grammar mistake, correct them in SOURCE_LANG, then repeat the correct phrase in TARGET_LANG.' 
+    systemInstruction: 'Tutor Mode: Talk in TARGET_LANG. If the user makes a grammar mistake, correct them gently in SOURCE_LANG, then repeat in TARGET_LANG.' 
   }
 ];
