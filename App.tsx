@@ -1,4 +1,3 @@
-// src/App.tsx
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenAI, Modality } from '@google/genai';
 import { Mic, Headphones, ExternalLink, ShieldCheck, Settings, KeyRound, LogOut, ArrowLeftRight } from 'lucide-react';
@@ -31,7 +30,7 @@ const App: React.FC = () => {
   const t = (key: string) => translations[nativeLang.code]?.[key] || translations['en-US']?.[key] || key;
   const dir = nativeLang.code === 'he-IL' || nativeLang.code === 'ar-SA' ? 'rtl' : 'ltr';
 
-  // פונקציית התנתקות - התיקון למסך הכחול
+  // פונקציית התנתקות - התיקון הקריטי למסך הכחול
   const handleLogout = () => {
     localStorage.removeItem('lingolive_user');
     setUserData(null);
@@ -81,16 +80,21 @@ const App: React.FC = () => {
         .replace(/SOURCE_LANG/g, nativeLang.name)
         .replace(/TARGET_LANG/g, targetLang.name);
 
-      const ai = new GoogleGenAI({ apiKey });
-      const session = await ai.live.connect({ 
-        model: 'gemini-2.0-flash-exp', 
-        config: { 
-            responseModalities: [Modality.AUDIO], 
-            systemInstruction: instructions,
-            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } } }
-        } 
+      const ai = new GoogleGenAI(apiKey);
+      const model = ai.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+      
+      const session = await model.startChat({
+        history: [{ role: "user", parts: [{ text: instructions }] }]
       });
-      activeSessionRef.current = session;
+      
+      // הגדרת ה-Live Session בצורה שתומכת בשידור בינארי
+      activeSessionRef.current = await ai.live.connect({
+        model: "gemini-2.0-flash-exp",
+        config: { 
+            systemInstruction: instructions,
+            responseModalities: [Modality.AUDIO]
+        }
+      });
 
       const source = inputAudioContextRef.current!.createMediaStreamSource(stream);
       const scriptProcessor = inputAudioContextRef.current!.createScriptProcessor(2048, 1, 1);
@@ -98,11 +102,15 @@ const App: React.FC = () => {
       scriptProcessor.onaudioprocess = (e) => {
           if (activeSessionRef.current) {
               const pcmData = createPcmBlob(e.inputBuffer.getChannelData(0));
-              // תיקון למניעת שגיאת Blob: שליחת מערך של אובייקטים עם inlineData
-              activeSessionRef.current.sendRealtimeInput([{
-                  data: pcmData,
-                  mimeType: "audio/pcm;rate=16000"
-              }]);
+              // תיקון המבנה: שליחת אובייקט מדיה תקני למניעת שגיאת Blob
+              activeSessionRef.current.send({
+                realtimeInput: {
+                  mediaChunks: [{
+                    mimeType: "audio/pcm;rate=16000",
+                    data: pcmData
+                  }]
+                }
+              });
           }
       };
       source.connect(scriptProcessor);
@@ -110,7 +118,7 @@ const App: React.FC = () => {
 
       (async () => {
           try {
-            for await (const msg of session.listen()) {
+            for await (const msg of activeSessionRef.current.listen()) {
                 const audio = msg.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
                 if (audio) {
                     setIsSpeaking(true);
@@ -129,20 +137,14 @@ const App: React.FC = () => {
                     sourcesRef.current.add(audioSource);
                 }
             }
-          } catch(e) { console.error("Listener error:", e); stopConversation(); }
+          } catch(e) { stopConversation(); }
       })();
       setStatus(ConnectionStatus.CONNECTED);
-    } catch (e) { setStatus(ConnectionStatus.DISCONNECTED); console.error(e); }
+    } catch (e) { setStatus(ConnectionStatus.DISCONNECTED); }
   };
 
-  // תצוגות מותנות
   if (view === 'LOGIN') return <Login onLoginSuccess={handleLoginSuccess} nativeLang={nativeLang} setNativeLang={setNativeLang} t={t} />;
-  if (view === 'PRICING') return (
-    <div className={`relative h-screen ${dir}`} dir={dir}>
-      <Pricing onPlanSelect={() => setView('APP')} userEmail={userData?.email} t={t} />
-      <button onClick={handleLogout} className="fixed top-4 left-4 bg-slate-800 text-white px-4 py-2 rounded-full font-bold text-xs"><LogOut size={14}/> {t('logout')}</button>
-    </div>
-  );
+  if (view === 'PRICING') return <Pricing onPlanSelect={() => setView('APP')} userEmail={userData?.email} t={t} />;
   if (view === 'ADMIN') return <Admin onBack={() => window.location.reload()} />;
 
   return (
@@ -159,7 +161,7 @@ const App: React.FC = () => {
       </header>
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden">
         <div className="w-full md:w-[450px] flex flex-col p-4 gap-4 bg-slate-900/30 border-r border-white/5">
-          <div className="bg-slate-900/90 rounded-[2rem] border border-white/10 p-5 flex flex-col gap-4 shadow-2xl">
+          <div className="bg-slate-900/90 rounded-[2rem] border border-white/10 p-5 flex flex-col gap-4">
             <div className="bg-slate-800/40 p-3 rounded-2xl">
               <div className="flex justify-between px-2 mb-2 text-[10px] font-black text-indigo-300 uppercase"><span>{t('label_native')}</span><span>{t('label_target')}</span></div>
               <div className="flex items-center gap-2">
@@ -170,13 +172,13 @@ const App: React.FC = () => {
             </div>
             <div className="grid grid-cols-2 gap-3">
               {SCENARIOS.map(s => (
-                <button key={s.id} onClick={() => setSelectedScenario(s)} className={`py-4 rounded-2xl flex flex-col items-center gap-2 transition-all ${selectedScenario.id === s.id ? 'bg-indigo-600 text-white shadow-xl scale-[1.02]' : 'bg-slate-800/40 text-slate-500'}`}><span className="text-2xl">{s.icon}</span><span className="text-xs font-black uppercase text-center px-1">{t(s.title)}</span></button>
+                <button key={s.id} onClick={() => setSelectedScenario(s)} className={`py-4 rounded-2xl flex flex-col items-center gap-2 transition-all ${selectedScenario.id === s.id ? 'bg-indigo-600 text-white shadow-xl' : 'bg-slate-800/40 text-slate-500'}`}><span className="text-2xl">{s.icon}</span><span className="text-xs font-black uppercase text-center px-1">{t(s.title)}</span></button>
               ))}
             </div>
           </div>
           <div className="flex flex-col items-center py-6 flex-1 justify-center relative">
             <Avatar state={status === ConnectionStatus.CONNECTED ? (isSpeaking ? 'speaking' : 'listening') : 'idle'} />
-            <button onClick={status === ConnectionStatus.CONNECTED ? stopConversation : startConversation} className={`mt-8 px-10 py-5 rounded-full font-black text-xl shadow-2xl flex items-center gap-3 transition-all active:scale-95 ${status === ConnectionStatus.CONNECTED ? 'bg-red-500' : 'bg-indigo-600'}`}><Mic size={24} /> {status === ConnectionStatus.CONNECTED ? t('stop_conversation') : t('start_conversation')}</button>
+            <button onClick={status === ConnectionStatus.CONNECTED ? stopConversation : startConversation} className={`mt-8 px-10 py-5 rounded-full font-black text-xl shadow-2xl flex items-center gap-3 active:scale-95 ${status === ConnectionStatus.CONNECTED ? 'bg-red-500' : 'bg-indigo-600'}`}><Mic size={24} /> {status === ConnectionStatus.CONNECTED ? t('stop_conversation') : t('start_conversation')}</button>
             {(isSpeaking || status === ConnectionStatus.CONNECTED) && <AudioVisualizer isActive={true} color={isSpeaking ? "#6366f1" : "#10b981"} />}
           </div>
         </div>
