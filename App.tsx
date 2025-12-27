@@ -6,20 +6,14 @@ import { ConnectionStatus, SUPPORTED_LANGUAGES, SCENARIOS, Language, PracticeSce
 import { decode, decodeAudioData, createPcmBlob } from './services/audioService';
 import Avatar from './components/Avatar';
 import AudioVisualizer from './components/AudioVisualizer';
-import Login from './components/Login';
-import Pricing from './components/Pricing';
-import Admin from './components/Admin';
 import { translations } from './translations';
 
 const App: React.FC = () => {
-  const [view, setView] = useState<'LOGIN' | 'PRICING' | 'APP' | 'ADMIN'>('LOGIN');
-  const [userData, setUserData] = useState<any>(null);
   const [status, setStatus] = useState<ConnectionStatus>(ConnectionStatus.DISCONNECTED);
   const [targetLang, setTargetLang] = useState<Language>(SUPPORTED_LANGUAGES[0]);
   const [nativeLang, setNativeLang] = useState<Language>(SUPPORTED_LANGUAGES[1]);
   const [selectedScenario, setSelectedScenario] = useState<PracticeScenario>(SCENARIOS[0]);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [ads, setAds] = useState<any[]>([]);
 
   const activeSessionRef = useRef<any>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
@@ -33,38 +27,21 @@ const App: React.FC = () => {
 
   const stopConversation = useCallback(() => {
     if (activeSessionRef.current) { try { activeSessionRef.current.close(); } catch (e) {} activeSessionRef.current = null; }
-    if (micStreamRef.current) { micStreamRef.current.getTracks().forEach(track => track.stop()); micStreamRef.current = null; }
+    // שחרור אקטיבי של המיקרופון כדי למנוע הודעת "בשימוש"
+    if (micStreamRef.current) { 
+      micStreamRef.current.getTracks().forEach(track => track.stop()); 
+      micStreamRef.current = null; 
+    }
     sourcesRef.current.clear();
     setStatus(ConnectionStatus.DISCONNECTED);
     setIsSpeaking(false);
   }, []);
 
-  const handleLogout = useCallback(() => {
-    localStorage.removeItem('lingolive_user');
-    setUserData(null);
-    setView('LOGIN');
-    stopConversation();
-  }, [stopConversation]);
-
-  const handleLoginSuccess = useCallback((user: any, save = true) => {
-    if (save) localStorage.setItem('lingolive_user', JSON.stringify(user));
-    setUserData(user);
-    if (user.role === 'ADMIN' || user.email === 'mgilady@gmail.com') { setView('APP'); return; }
-    if (['PRO', 'Pro', 'BASIC', 'ADVANCED'].includes(user.plan) || user.tokens_used > 0) { setView('APP'); return; }
-    setView('PRICING');
-  }, []);
-
-  useEffect(() => {
-    const saved = localStorage.getItem('lingolive_user');
-    if (saved) { try { handleLoginSuccess(JSON.parse(saved), false); } catch (e) { localStorage.removeItem('lingolive_user'); } }
-    fetch('/api/admin/settings').then(res => res.json()).then(data => { if(data.ads) setAds(data.ads); }).catch(() => {});
-  }, [handleLoginSuccess]);
-
   const startConversation = async () => {
-    // שלב 1: בדיקת מפתח API
+    // 1. בדיקה אם המפתח קיים
     const apiKey = import.meta.env.VITE_API_KEY;
     if (!apiKey || apiKey === "undefined" || apiKey.length < 10) {
-      alert("Diagnostic Error: API Key is missing from the build. Check Cloudflare build command and Re-Deploy.");
+      alert("שגיאת מערכת: מפתח ה-API לא נמצא. וודא שהגדרת VITE_API_KEY ב-Cloudflare ובנית את האתר מחדש.");
       return;
     }
     
@@ -72,16 +49,9 @@ const App: React.FC = () => {
       stopConversation();
       setStatus(ConnectionStatus.CONNECTING);
       
-      // שלב 2: בקשת מיקרופון (עם טיפול בשגיאה ספציפית)
-      let stream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        micStreamRef.current = stream;
-      } catch (micErr) {
-        alert("Microphone Error: Access denied. Please allow microphone in your browser settings (click the lock icon).");
-        setStatus(ConnectionStatus.DISCONNECTED);
-        return;
-      }
+      // 2. פתיחת מיקרופון
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      micStreamRef.current = stream;
 
       if (!inputAudioContextRef.current) inputAudioContextRef.current = new AudioContext();
       if (!outputAudioContextRef.current) outputAudioContextRef.current = new AudioContext();
@@ -147,29 +117,17 @@ const App: React.FC = () => {
       })();
       setStatus(ConnectionStatus.CONNECTED);
     } catch (e: any) { 
-        setStatus(ConnectionStatus.DISCONNECTED); 
-        alert(`AI Connection Error: ${e.message || "Failed to connect to Google AI"}`); 
+        stopConversation(); // סגירת המיקרופון אם החיבור נכשל
+        alert(`שגיאת חיבור: ${e.message || "נכשל החיבור לגוגל"}`); 
     }
   };
 
-  if (view === 'LOGIN') return <Login onLoginSuccess={handleLoginSuccess} nativeLang={nativeLang} setNativeLang={setNativeLang} t={t} />;
-  if (view === 'PRICING') return (
-    <div className={`relative h-screen ${dir}`} dir={dir}>
-      <Pricing onPlanSelect={() => setView('APP')} userEmail={userData?.email} t={t} />
-      <button onClick={handleLogout} className="fixed top-4 left-4 bg-slate-800 text-white px-4 py-2 rounded-full font-bold text-xs shadow-lg">Logout</button>
-    </div>
-  );
-  if (view === 'ADMIN') return <Admin onBack={() => window.location.reload()} />;
-
   return (
     <div className={`h-screen bg-slate-950 flex flex-col text-slate-200 overflow-hidden font-['Inter'] ${dir}`} dir={dir}>
-      <header className="p-2 flex items-center justify-between bg-slate-900/60 border-b border-white/5 backdrop-blur-xl">
+      <header className="p-2 flex items-center justify-between bg-slate-900/60 border-b border-white/5 backdrop-blur-xl shrink-0">
         <div className="flex items-center gap-2">
           <div className="w-5 h-5 bg-indigo-600 rounded flex items-center justify-center shadow-lg"><Headphones size={12} /></div>
           <span className="font-black text-[10px] uppercase tracking-tighter">LingoLive Pro</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={handleLogout} className="text-[10px] text-slate-500 hover:text-white underline">{t('logout')}</button>
         </div>
       </header>
 
@@ -183,7 +141,6 @@ const App: React.FC = () => {
                 <select value={targetLang.code} onChange={e => setTargetLang(SUPPORTED_LANGUAGES.find(l => l.code === e.target.value)!)} className="bg-slate-900 border border-white/10 rounded-lg px-1 py-3 text-[10px] font-bold w-full text-center">{SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}</select>
               </div>
             </div>
-            
             <div className="grid grid-cols-2 gap-1.5">
               {SCENARIOS.map(s => (
                 <button key={s.id} onClick={() => setSelectedScenario(s)} className={`py-3 rounded-xl flex flex-col items-center gap-0.5 transition-all ${selectedScenario.id === s.id ? 'bg-indigo-600 text-white shadow-xl' : 'bg-slate-800/40 text-slate-500'}`}>
