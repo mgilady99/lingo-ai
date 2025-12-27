@@ -24,17 +24,22 @@ const App: React.FC = () => {
   const dir = (nativeLang.code === 'he-IL' || nativeLang.code === 'ar-SA' || nativeLang.code === 'tr-TR') ? 'rtl' : 'ltr';
 
   const stopConversation = useCallback(() => {
-    if (activeSessionRef.current) { try { activeSessionRef.current.close(); } catch (e) {} activeSessionRef.current = null; }
-    if (micStreamRef.current) { micStreamRef.current.getTracks().forEach(t => t.stop()); micStreamRef.current = null; }
+    if (activeSessionRef.current) { 
+      try { activeSessionRef.current.close(); } catch (e) {} 
+      activeSessionRef.current = null; 
+    }
+    if (micStreamRef.current) { 
+      micStreamRef.current.getTracks().forEach(track => track.stop()); 
+      micStreamRef.current = null; 
+    }
     setStatus(ConnectionStatus.DISCONNECTED);
     setIsSpeaking(false);
   }, []);
 
   const startConversation = async () => {
-    // שליפת המפתח בצורה ישירה
     const apiKey = import.meta.env.VITE_API_KEY;
     if (!apiKey || apiKey === "undefined") {
-      alert("System Diagnostics: API Key is still not being read from environment. Please perform a 'Create New Deployment' in Cloudflare.");
+      alert("Error: API Key missing from build. Please perform a 'Create New Deployment' in Cloudflare.");
       return;
     }
     
@@ -44,9 +49,10 @@ const App: React.FC = () => {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       micStreamRef.current = stream;
 
-      const inCtx = new AudioContext();
-      inputAudioContextRef.current = inCtx;
-      outputAudioContextRef.current = new AudioContext();
+      if (!inputAudioContextRef.current) inputAudioContextRef.current = new AudioContext();
+      if (!outputAudioContextRef.current) outputAudioContextRef.current = new AudioContext();
+      await inputAudioContextRef.current.resume();
+      await outputAudioContextRef.current.resume();
 
       const ai = new GoogleGenAI(apiKey); 
       const session = await ai.live.connect({
@@ -54,26 +60,20 @@ const App: React.FC = () => {
         config: { 
           systemInstruction: selectedScenario.systemInstruction.replace(/SOURCE_LANG/g, nativeLang.name).replace(/TARGET_LANG/g, targetLang.name),
           responseModalities: [Modality.AUDIO],
-          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } }
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } } }
         },
-        // תיקון קריסה: הוספת callbacks כפי שהוצע ע"י Grok
-        callbacks: {
-          onopen: () => console.log("Live session connected"),
-          onmessage: (m) => console.log("Incoming data"),
-          onerror: (e) => console.error("Session error", e),
-          onclose: () => console.log("Session closed")
-        }
+        // תיקון קריסה: הוספת אובייקט callbacks ריק למניעת שגיאת onmessage
+        callbacks: { onopen: () => {}, onmessage: () => {}, onerror: () => {}, onclose: () => {} }
       });
       activeSessionRef.current = session;
 
-      const source = inCtx.createMediaStreamSource(stream);
-      const scriptProcessor = inCtx.createScriptProcessor(4096, 1, 1);
+      const source = inputAudioContextRef.current!.createMediaStreamSource(stream);
+      const scriptProcessor = inputAudioContextRef.current!.createScriptProcessor(4096, 1, 1);
       
       scriptProcessor.onaudioprocess = (e) => {
         if (activeSessionRef.current && activeSessionRef.current.send) {
-          const pcmBase64 = createPcmBlob(e.inputBuffer.getChannelData(0), inCtx.sampleRate);
           activeSessionRef.current.send({
-            realtimeInput: { mediaChunks: [{ data: pcmBase64, mimeType: `audio/pcm;rate=16000` }] }
+            realtimeInput: { mediaChunks: [{ data: createPcmBlob(e.inputBuffer.getChannelData(0)), mimeType: `audio/pcm;rate=16000` }] }
           });
         }
       };
@@ -88,7 +88,7 @@ const App: React.FC = () => {
             if (audio) {
               setIsSpeaking(true);
               const outCtx = outputAudioContextRef.current!;
-              const buffer = decodeAudioData(hM(audio), outCtx, 24000);
+              const buffer = decodeAudioData(decode(audio), outCtx, 24000);
               const audioSource = outCtx.createBufferSource();
               audioSource.buffer = buffer; 
               audioSource.connect(outCtx.destination);
@@ -102,12 +102,6 @@ const App: React.FC = () => {
 
       setStatus(ConnectionStatus.CONNECTED);
     } catch (e: any) { stopConversation(); alert(`Connection failed: ${e.message}`); }
-  };
-
-  const hM = (e: string) => {
-    const t = atob(e), n = new Uint8Array(t.length);
-    for (let i = 0; i < t.length; i++) n[i] = t.charCodeAt(i);
-    return n.buffer;
   };
 
   return (
@@ -124,7 +118,7 @@ const App: React.FC = () => {
           <div className="bg-slate-900/90 rounded-[2rem] border border-white/10 p-6 flex flex-col gap-4">
             <div className="bg-slate-800/40 p-4 rounded-2xl border border-white/5">
               <div className="flex items-center gap-3">
-                {/* שחזור גודל מקורי py-4 */}
+                {/* שחזור גודל מקורי גדול py-4 */}
                 <select value={nativeLang.code} onChange={e => setNativeLang(SUPPORTED_LANGUAGES.find(l => l.code === e.target.value)!)} className="bg-slate-900 border border-white/10 rounded-xl px-4 py-4 text-sm font-bold w-full text-center">{SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}</select>
                 <ArrowLeftRight size={20} className="text-indigo-500 shrink-0" />
                 <select value={targetLang.code} onChange={e => setTargetLang(SUPPORTED_LANGUAGES.find(l => l.code === e.target.value)!)} className="bg-slate-900 border border-white/10 rounded-xl px-4 py-4 text-sm font-bold w-full text-center">{SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}</select>
