@@ -25,14 +25,14 @@ const App: React.FC = () => {
 
   const stopConversation = useCallback(() => {
     if (activeSessionRef.current) { try { activeSessionRef.current.close(); } catch (e) {} activeSessionRef.current = null; }
-    if (micStreamRef.current) { micStreamRef.current.getTracks().forEach(t => t.stop()); micStreamRef.current = null; }
+    if (micStreamRef.current) { micStreamRef.current.getTracks().forEach(track => track.stop()); micStreamRef.current = null; }
     setStatus(ConnectionStatus.DISCONNECTED);
     setIsSpeaking(false);
   }, []);
 
   const startConversation = async () => {
     const apiKey = import.meta.env.VITE_API_KEY;
-    if (!apiKey || apiKey === "undefined") return alert("API Key missing. Check Cloudflare Dashboard.");
+    if (!apiKey || apiKey === "undefined") return alert("API Key missing. Check Cloudflare Dashboard Variables.");
 
     try {
       stopConversation();
@@ -52,6 +52,7 @@ const App: React.FC = () => {
           responseModalities: [Modality.AUDIO],
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } }
         },
+        // תיקון קריסת ה-WebSocket (תמונה 117)
         callbacks: { onopen: () => {}, onmessage: () => {}, onerror: () => {}, onclose: () => {} }
       });
       activeSessionRef.current = session;
@@ -79,7 +80,7 @@ const App: React.FC = () => {
               const audioSource = outCtx.createBufferSource();
               audioSource.buffer = buffer; 
               audioSource.connect(outCtx.destination);
-              audioSource.onended = () => { if (status !== ConnectionStatus.CONNECTED) setIsSpeaking(false); };
+              audioSource.onended = () => { setIsSpeaking(false); };
               audioSource.start(Math.max(nextStartTimeRef.current, outCtx.currentTime));
               nextStartTimeRef.current = Math.max(nextStartTimeRef.current, outCtx.currentTime) + buffer.duration;
             }
@@ -104,14 +105,13 @@ const App: React.FC = () => {
           <div className="bg-slate-900/90 rounded-[2rem] border border-white/10 p-6 flex flex-col gap-4">
             <div className="bg-slate-800/40 p-4 rounded-2xl border border-white/5">
               <div className="flex items-center gap-3">
-                {/* שחזור גדלים גדולים py-4 */}
+                {/* שדות שפה גדולים - py-4 */}
                 <select value={nativeLang.code} onChange={e => setNativeLang(SUPPORTED_LANGUAGES.find(l => l.code === e.target.value)!)} className="bg-slate-900 border border-white/10 rounded-xl px-4 py-4 text-sm font-bold w-full text-center">{SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}</select>
                 <ArrowLeftRight size={20} className="text-indigo-500 shrink-0" />
                 <select value={targetLang.code} onChange={e => setTargetLang(SUPPORTED_LANGUAGES.find(l => l.code === e.target.value)!)} className="bg-slate-900 border border-white/10 rounded-xl px-4 py-4 text-sm font-bold w-full text-center">{SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}</select>
               </div>
             </div>
             
-            {/* שחזור גדלים גדולים py-6 */}
             <div className="grid grid-cols-2 gap-3">
               {SCENARIOS.map(s => (
                 <button key={s.id} onClick={() => setSelectedScenario(s)} className={`py-6 rounded-3xl flex flex-col items-center gap-2 transition-all ${selectedScenario.id === s.id ? 'bg-indigo-600 text-white shadow-xl scale-105' : 'bg-slate-800/40 text-slate-500'}`}>
