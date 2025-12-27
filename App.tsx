@@ -1,3 +1,4 @@
+// src/App.tsx
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenAI, Modality } from '@google/genai';
 import { Mic, Headphones, ExternalLink, ShieldCheck, Settings, LogOut, ArrowLeftRight } from 'lucide-react';
@@ -30,8 +31,7 @@ const App: React.FC = () => {
   const t = (key: string) => translations[nativeLang.code]?.[key] || translations['en-US']?.[key] || key;
   const dir = (nativeLang.code === 'he-IL' || nativeLang.code === 'ar-SA') ? 'rtl' : 'ltr';
 
-  // --- פונקציות ניהול שיחה ---
-
+  // פונקציית התנתקות - מוגדרת כאן למניעת ReferenceError "handleLogout is not defined"
   const stopConversation = useCallback(() => {
     if (activeSessionRef.current) { try { activeSessionRef.current.close(); } catch (e) {} activeSessionRef.current = null; }
     if (micStreamRef.current) { micStreamRef.current.getTracks().forEach(t => t.stop()); micStreamRef.current = null; }
@@ -40,7 +40,6 @@ const App: React.FC = () => {
     setIsSpeaking(false);
   }, []);
 
-  // תיקון למסך הכחול: פונקציה מוגדרת בתוך ה-Scope
   const handleLogout = useCallback(() => {
     localStorage.removeItem('lingolive_user');
     setUserData(null);
@@ -65,15 +64,21 @@ const App: React.FC = () => {
   }, [handleLoginSuccess]);
 
   const startConversation = async () => {
+    // בדיקת API KEY קריטית
     const apiKey = import.meta.env.VITE_API_KEY;
-    if (!apiKey || apiKey === "undefined") return alert("Error: VITE_API_KEY is missing in Cloudflare settings.");
+    if (!apiKey || apiKey === "undefined") {
+      console.error("Critical: API Key is missing.");
+      alert("שגיאה: מפתח ה-API לא מוגדר במערכת. אנא הגדר VITE_API_KEY ב-Cloudflare.");
+      return;
+    }
     
     try {
       setStatus(ConnectionStatus.CONNECTING);
       
-      // אתחול AudioContext עבור מחשב ומובייל
+      // אתחול אודיו מותאם מובייל
       if (!inputAudioContextRef.current) inputAudioContextRef.current = new AudioContext();
       if (!outputAudioContextRef.current) outputAudioContextRef.current = new AudioContext();
+
       await inputAudioContextRef.current.resume();
       await outputAudioContextRef.current.resume();
 
@@ -85,6 +90,7 @@ const App: React.FC = () => {
         .replace(/SOURCE_LANG/g, nativeLang.name)
         .replace(/TARGET_LANG/g, targetLang.name);
 
+      // חיבור Live יציב
       const session = await ai.live.connect({
         model: "gemini-2.0-flash-exp",
         config: { 
@@ -96,12 +102,13 @@ const App: React.FC = () => {
       activeSessionRef.current = session;
 
       const source = inputAudioContextRef.current!.createMediaStreamSource(stream);
+      // באפר גדול יותר למובייל למניעת קיטועים
       const scriptProcessor = inputAudioContextRef.current!.createScriptProcessor(4096, 1, 1);
       
       scriptProcessor.onaudioprocess = (e) => {
         if (activeSessionRef.current) {
           const pcmData = createPcmBlob(e.inputBuffer.getChannelData(0));
-          // תיקון שגיאת ה-Blob: שליחת מערך אובייקטים עם inlineData
+          // --- תיקון שגיאת ה-Blob: המבנה המדויק שגוגל דורשת כעת ---
           activeSessionRef.current.sendRealtimeInput([{
             data: pcmData,
             mimeType: `audio/pcm;rate=${inputAudioContextRef.current?.sampleRate || 16000}`
@@ -113,6 +120,7 @@ const App: React.FC = () => {
 
       (async () => {
         try {
+          if (!session) return;
           for await (const msg of session.listen()) {
             const audio = msg.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
             if (audio) {
@@ -132,23 +140,22 @@ const App: React.FC = () => {
               sourcesRef.current.add(audioSource);
             }
           }
-        } catch(e) { stopConversation(); }
+        } catch(e) { console.error("Session ended:", e); stopConversation(); }
       })();
       setStatus(ConnectionStatus.CONNECTED);
     } catch (e) { 
         setStatus(ConnectionStatus.DISCONNECTED); 
-        alert("Microphone connection failed. Please grant permissions.");
+        console.error("Connection Failed:", e);
+        alert("החיבור נכשל. ודא שהמיקרופון מחובר ושיש לך הרשאות.");
     }
   };
-
-  // --- תצוגות מותנות ---
 
   if (view === 'LOGIN') return <Login onLoginSuccess={handleLoginSuccess} nativeLang={nativeLang} setNativeLang={setNativeLang} t={t} />;
   
   if (view === 'PRICING') return (
     <div className={`relative h-screen ${dir}`} dir={dir}>
       <Pricing onPlanSelect={() => setView('APP')} userEmail={userData?.email} t={t} />
-      <button onClick={handleLogout} className="fixed top-4 left-4 bg-slate-800 text-white px-4 py-2 rounded-full font-bold text-xs">Logout</button>
+      <button onClick={handleLogout} className={`fixed top-4 ${dir === 'rtl' ? 'left-4' : 'right-4'} bg-slate-800 text-white px-4 py-2 rounded-full font-bold text-xs flex items-center gap-2`}><LogOut size={14}/> {t('logout')}</button>
     </div>
   );
 
@@ -163,7 +170,7 @@ const App: React.FC = () => {
         </div>
         <div className="flex items-center gap-3">
           {userData?.role === 'ADMIN' && (
-            <button onClick={() => setView('ADMIN')} className="bg-white text-indigo-900 px-4 py-2 rounded-full font-black text-xs flex items-center gap-2 shadow-lg"><Settings size={14} /> Admin</button>
+            <button onClick={() => setView('ADMIN')} className="bg-white text-indigo-900 px-4 py-2 rounded-full font-black text-xs flex items-center gap-2 hover:bg-slate-200 shadow-lg"><Settings size={14} /> Admin</button>
           )}
           <button onClick={handleLogout} className="text-xs text-slate-500 hover:text-white underline">{t('logout')}</button>
         </div>
@@ -173,14 +180,14 @@ const App: React.FC = () => {
         <div className="w-full md:w-[450px] flex flex-col p-4 gap-4 bg-slate-900/30 border-r border-white/5 shadow-2xl">
           <div className="bg-slate-900/90 rounded-[2rem] border border-white/10 p-5 flex flex-col gap-4 shadow-2xl">
             <div className="bg-slate-800/40 p-3 rounded-2xl border border-white/5">
-              <div className="flex justify-between px-2 mb-2 text-[10px] font-black text-indigo-300 uppercase">
+              <div className="flex justify-between px-2 mb-2 text-[10px] font-black text-indigo-300 uppercase tracking-widest">
                 <span>{t('label_native')}</span>
                 <span>{t('label_target')}</span>
               </div>
               <div className="flex items-center gap-2">
-                <select value={nativeLang.code} onChange={e => setNativeLang(SUPPORTED_LANGUAGES.find(l => l.code === e.target.value)!)} className="bg-slate-900 border border-white/10 rounded-lg px-2 py-2 text-xs font-bold outline-none w-full text-center">{SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}</select>
+                <select value={nativeLang.code} onChange={e => setNativeLang(SUPPORTED_LANGUAGES.find(l => l.code === e.target.value)!)} className="bg-slate-900 border border-white/10 rounded-lg px-2 py-2 text-xs font-bold outline-none w-full text-center transition-colors focus:border-indigo-500">{SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}</select>
                 <ArrowLeftRight size={14} className="text-indigo-500 shrink-0" />
-                <select value={targetLang.code} onChange={e => setTargetLang(SUPPORTED_LANGUAGES.find(l => l.code === e.target.value)!)} className="bg-slate-900 border border-white/10 rounded-lg px-2 py-2 text-xs font-bold outline-none w-full text-center">{SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}</select>
+                <select value={targetLang.code} onChange={e => setTargetLang(SUPPORTED_LANGUAGES.find(l => l.code === e.target.value)!)} className="bg-slate-900 border border-white/10 rounded-lg px-2 py-2 text-xs font-bold outline-none w-full text-center transition-colors focus:border-indigo-500">{SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}</select>
               </div>
             </div>
             
@@ -200,7 +207,15 @@ const App: React.FC = () => {
 
           <div className="flex flex-col items-center py-6 flex-1 justify-center relative">
             <Avatar state={status === ConnectionStatus.CONNECTED ? (isSpeaking ? 'speaking' : 'listening') : 'idle'} />
-            <button onClick={status === ConnectionStatus.CONNECTED ? stopConversation : startConversation} className={`mt-8 px-12 py-6 rounded-full font-black text-2xl shadow-2xl flex items-center gap-3 transition-all active:scale-95 ${status === ConnectionStatus.CONNECTED ? 'bg-red-500 hover:bg-red-600' : 'bg-indigo-600 hover:bg-indigo-500'}`}><Mic size={32} /> {status === ConnectionStatus.CONNECTED ? t('stop_conversation') : t('start_conversation')}</button>
+            
+            <button 
+              onClick={status === ConnectionStatus.CONNECTED ? stopConversation : startConversation} 
+              className={`mt-8 px-12 py-6 rounded-full font-black text-2xl shadow-2xl flex items-center gap-3 transition-all active:scale-95 ${status === ConnectionStatus.CONNECTED ? 'bg-red-500 hover:bg-red-600' : 'bg-indigo-600 hover:bg-indigo-500'}`}
+            >
+                <Mic size={32} /> 
+                {status === ConnectionStatus.CONNECTED ? t('stop_conversation') : t('start_conversation')}
+            </button>
+            
             {(isSpeaking || status === ConnectionStatus.CONNECTED) && <AudioVisualizer isActive={true} color={isSpeaking ? "#6366f1" : "#10b981"} />}
           </div>
         </div>
@@ -219,4 +234,4 @@ const App: React.FC = () => {
   );
 };
 
-export default App; // 
+export default App; // הוספת הייצוא החסר שגרם לשגיאת הבנייה
