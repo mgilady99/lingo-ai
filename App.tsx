@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback } from "react";
-import { GoogleGenAI, Modality } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { Mic, Headphones, ArrowLeftRight } from "lucide-react";
 import {
   ConnectionStatus,
@@ -8,87 +8,88 @@ import {
   Language,
   PracticeScenario,
 } from "./types";
-import { decode, decodeAudioData, createPcmBlob } from "./services/audioService";
 import Avatar from "./components/Avatar";
 import AudioVisualizer from "./components/AudioVisualizer";
 import { translations } from "./translations";
 
-// מומלץ: מודל Live Audio (אם בחשבון שלך לא זמין, תגיד לי ונחליף למודל אחר תואם)
-const LIVE_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025";
+/**
+ * ✅ IMPORTANT
+ * - אנחנו נשארים ב-Frontend בלבד (Browser).
+ * - לכן לא משתמשים ב-ai.live.connect() ולא ב-session.send/listen.
+ * - במקום זה: מקליטים chunks ושולחים ל-Gemini כבקשות רגילות.
+ */
+
+const CHUNK_MS = 2000; // כל כמה זמן לשלוח הקלטה (אפשר 1500–3000)
+
+function isRtlLang(code: string) {
+  return code === "he-IL" || code === "ar-SA";
+}
+
+async function blobToBase64(blob: Blob): Promise<string> {
+  const arr = new Uint8Array(await blob.arrayBuffer());
+  let binary = "";
+  for (let i = 0; i < arr.length; i++) binary += String.fromCharCode(arr[i]);
+  return btoa(binary);
+}
+
+function pickVoiceForLang(langCode: string): SpeechSynthesisVoice | null {
+  const voices = window.speechSynthesis?.getVoices?.() || [];
+  // נסה התאמה מדויקת
+  let v = voices.find((x) => (x.lang || "").toLowerCase() === langCode.toLowerCase());
+  if (v) return v;
+
+  // נסה התאמה לפי שפה בלי אזור (he מתוך he-IL)
+  const short = langCode.split("-")[0]?.toLowerCase();
+  v = voices.find((x) => (x.lang || "").toLowerCase().startsWith(short));
+  return v || null;
+}
+
+function speakText(text: string, langCode: string) {
+  try {
+    if (!("speechSynthesis" in window)) return;
+
+    // עוצרים כל דיבור קודם
+    window.speechSynthesis.cancel();
+
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = langCode;
+
+    const voice = pickVoiceForLang(langCode);
+    if (voice) utter.voice = voice;
+
+    window.speechSynthesis.speak(utter);
+  } catch {
+    // לא חוסם
+  }
+}
 
 const App: React.FC = () => {
-  const [status, setStatus] = useState<ConnectionStatus>(
-    ConnectionStatus.DISCONNECTED
-  );
+  const [status, setStatus] = useState<ConnectionStatus>(ConnectionStatus.DISCONNECTED);
   const [targetLang, setTargetLang] = useState<Language>(SUPPORTED_LANGUAGES[0]);
   const [nativeLang, setNativeLang] = useState<Language>(SUPPORTED_LANGUAGES[1]);
-  const [selectedScenario, setSelectedScenario] = useState<PracticeScenario>(
-    SCENARIOS[0]
-  );
+  const [selectedScenario, setSelectedScenario] = useState<PracticeScenario>(SCENARIOS[0]);
   const [isSpeaking, setIsSpeaking] = useState(false);
 
-  const activeSessionRef = useRef<any>(null);
-
   const micStreamRef = useRef<MediaStream | null>(null);
-
-  const inputAudioContextRef = useRef<AudioContext | null>(null);
-  const outputAudioContextRef = useRef<AudioContext | null>(null);
-
-  const mediaSourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
-
-  const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
-  const nextStartTimeRef = useRef(0);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const queueRef = useRef<Blob[]>([]);
+  const busyRef = useRef(false);
+  const stoppedRef = useRef(false);
 
   const t = (key: string) =>
-    translations[nativeLang.code]?.[key] ||
-    translations["en-US"]?.[key] ||
-    key;
+    translations[nativeLang.code]?.[key] || translations["en-US"]?.[key] || key;
 
-  const dir =
-    nativeLang.code === "he-IL" || nativeLang.code === "ar-SA" ? "rtl" : "ltr";
-
-  const hardCleanupAudioGraph = useCallback(() => {
-    try {
-      if (scriptProcessorRef.current) {
-        try {
-          scriptProcessorRef.current.disconnect();
-        } catch {}
-        scriptProcessorRef.current.onaudioprocess = null;
-        scriptProcessorRef.current = null;
-      }
-
-      if (mediaSourceNodeRef.current) {
-        try {
-          mediaSourceNodeRef.current.disconnect();
-        } catch {}
-        mediaSourceNodeRef.current = null;
-      }
-
-      // stop all currently playing audio buffers
-      for (const src of sourcesRef.current) {
-        try {
-          src.stop();
-        } catch {}
-        try {
-          src.disconnect();
-        } catch {}
-      }
-      sourcesRef.current.clear();
-      nextStartTimeRef.current = 0;
-    } catch {}
-  }, []);
+  const dir = isRtlLang(nativeLang.code) ? "rtl" : "ltr";
 
   const stopConversation = useCallback(() => {
-    // close session
-    if (activeSessionRef.current) {
-      try {
-        activeSessionRef.current.close?.();
-      } catch {}
-      activeSessionRef.current = null;
-    }
+    stoppedRef.current = true;
 
-    // stop mic stream
+    try {
+      recorderRef.current?.stop();
+    } catch {}
+
+    recorderRef.current = null;
+
     if (micStreamRef.current) {
       try {
         micStreamRef.current.getTracks().forEach((track) => track.stop());
@@ -96,192 +97,157 @@ const App: React.FC = () => {
       micStreamRef.current = null;
     }
 
-    hardCleanupAudioGraph();
-
-    setStatus(ConnectionStatus.DISCONNECTED);
-    setIsSpeaking(false);
-  }, [hardCleanupAudioGraph]);
-
-  const playIncomingAudio = useCallback((base64Audio: string) => {
-    const outCtx = outputAudioContextRef.current;
-    if (!outCtx) return;
+    queueRef.current = [];
+    busyRef.current = false;
 
     try {
-      setIsSpeaking(true);
+      window.speechSynthesis?.cancel?.();
+    } catch {}
 
-      nextStartTimeRef.current = Math.max(
-        nextStartTimeRef.current,
-        outCtx.currentTime
-      );
-
-      const buffer = decodeAudioData(decode(base64Audio), outCtx, 24000);
-      const audioSource = outCtx.createBufferSource();
-      audioSource.buffer = buffer;
-      audioSource.connect(outCtx.destination);
-
-      audioSource.onended = () => {
-        sourcesRef.current.delete(audioSource);
-        if (sourcesRef.current.size === 0) setIsSpeaking(false);
-      };
-
-      sourcesRef.current.add(audioSource);
-      audioSource.start(nextStartTimeRef.current);
-      nextStartTimeRef.current += buffer.duration;
-    } catch (e) {
-      console.error("❌ Failed to play audio", e);
-    }
+    setIsSpeaking(false);
+    setStatus(ConnectionStatus.DISCONNECTED);
   }, []);
+
+  const processQueue = useCallback(async () => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+
+    const apiKey = import.meta.env.VITE_API_KEY;
+    if (!apiKey || apiKey === "undefined") {
+      busyRef.current = false;
+      alert("API Key missing. Check Cloudflare variables: VITE_API_KEY");
+      stopConversation();
+      return;
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
+
+    while (!stoppedRef.current && queueRef.current.length > 0) {
+      const blob = queueRef.current.shift()!;
+      try {
+        // המרה ל-base64
+        const base64Audio = await blobToBase64(blob);
+
+        // הוראות לפי התרחיש שלך
+        const instructions = selectedScenario.systemInstruction
+          .replace(/SOURCE_LANG/g, nativeLang.name)
+          .replace(/TARGET_LANG/g, targetLang.name);
+
+        /**
+         * אנחנו מבקשים:
+         * 1) לתמלל את האודיו
+         * 2) לתרגם לשפת יעד
+         * 3) להחזיר טקסט נקי של התרגום בלבד
+         */
+        const prompt = `
+You are a real-time interpreter.
+${instructions}
+
+Rules:
+- First, understand the spoken content.
+- Then output ONLY the translation in ${targetLang.name}.
+- No explanations, no quotes, no extra words.
+`;
+
+        setIsSpeaking(true);
+
+        const res = await ai.models.generateContent({
+          // מודל טקסט מהיר שמתאים לתרגום. אפשר לשנות אם תרצה.
+          model: "gemini-2.0-flash",
+          contents: [
+            {
+              role: "user",
+              parts: [
+                {
+                  inlineData: {
+                    data: base64Audio,
+                    // MediaRecorder בכרום בד"כ מוציא webm/opus
+                    mimeType: blob.type || "audio/webm",
+                  },
+                },
+                { text: prompt },
+              ],
+            },
+          ],
+        });
+
+        // חילוץ טקסט
+        const translated =
+          (res as any)?.text?.() ||
+          (res as any)?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text).filter(Boolean).join("") ||
+          "";
+
+        const clean = (translated || "").trim();
+
+        if (clean) {
+          // משמיעים בקול (דפדפן)
+          speakText(clean, targetLang.code);
+        }
+      } catch (e) {
+        // אם נכשל, ממשיכים ל-chunk הבא
+        console.error("Chunk processing failed", e);
+      } finally {
+        setIsSpeaking(false);
+      }
+    }
+
+    busyRef.current = false;
+  }, [nativeLang.name, selectedScenario.systemInstruction, stopConversation, targetLang.code, targetLang.name]);
 
   const startConversation = useCallback(async () => {
     const apiKey = import.meta.env.VITE_API_KEY;
-
     if (!apiKey || apiKey === "undefined") {
-      alert("API Key missing. Check Cloudflare Variables (VITE_API_KEY).");
+      alert("API Key missing. Check Cloudflare variables: VITE_API_KEY");
       return;
     }
 
     try {
       stopConversation();
+      stoppedRef.current = false;
       setStatus(ConnectionStatus.CONNECTING);
 
-      // Ask for microphone permission
+      // מיקרופון
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       micStreamRef.current = stream;
 
-      // Create contexts
-      if (!inputAudioContextRef.current) {
-        inputAudioContextRef.current = new AudioContext();
-      }
-      if (!outputAudioContextRef.current) {
-        outputAudioContextRef.current = new AudioContext();
-      }
+      // MediaRecorder
+      const recorder = new MediaRecorder(stream);
+      recorderRef.current = recorder;
 
-      await inputAudioContextRef.current.resume();
-      await outputAudioContextRef.current.resume();
+      queueRef.current = [];
 
-      // ✅ Correct client init
-      const ai = new GoogleGenAI({ apiKey });
+      recorder.ondataavailable = (ev) => {
+        if (stoppedRef.current) return;
+        if (!ev.data || ev.data.size === 0) return;
 
-      const instructions = selectedScenario.systemInstruction
-        .replace(/SOURCE_LANG/g, nativeLang.name)
-        .replace(/TARGET_LANG/g, targetLang.name);
-
-      // ✅ Connect to Live
-      const session = await ai.live.connect({
-        model: LIVE_MODEL,
-        config: {
-          systemInstruction: instructions,
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } },
-          },
-        },
-        callbacks: {
-          onopen: () => console.log("✅ Live session opened"),
-          onclose: (e: any) => console.log("ℹ️ Live session closed", e),
-          onerror: (e: any) => console.error("❌ Live session error", e),
-        },
-      });
-
-      activeSessionRef.current = session;
-
-      // ✅ IMPORTANT:
-      // Live API הוא event-driven. אין session.listen().
-      // אנחנו מאזינים לתגובות דרך אירוע "response" (או onmessage, תלוי בגרסת SDK).
-      const attachResponseHandler = () => {
-        // גרסה A: אם יש event emitter
-        if (typeof session.on === "function") {
-          session.on("response", (msg: any) => {
-            const audio =
-              msg?.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-            if (audio) playIncomingAudio(audio);
-          });
-
-          // לפעמים האודיו מגיע גם דרך message
-          session.on("message", (msg: any) => {
-            const audio =
-              msg?.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-            if (audio) playIncomingAudio(audio);
-          });
-
-          return true;
-        }
-
-        // גרסה B: אם יש onmessage handler
-        if ("onmessage" in session) {
-          session.onmessage = (msg: any) => {
-            const audio =
-              msg?.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-            if (audio) playIncomingAudio(audio);
-          };
-          return true;
-        }
-
-        return false;
+        // דוחפים לתור ושולחים לעיבוד
+        queueRef.current.push(ev.data);
+        processQueue();
       };
 
-      const ok = attachResponseHandler();
-      if (!ok) {
-        console.warn(
-          "⚠️ Could not attach response handler. SDK interface differs."
-        );
-      }
-
-      // Build mic processing graph -> send PCM chunks
-      const inCtx = inputAudioContextRef.current!;
-      hardCleanupAudioGraph();
-
-      const mediaSource = inCtx.createMediaStreamSource(stream);
-      mediaSourceNodeRef.current = mediaSource;
-
-      // ScriptProcessorNode (deprecated warning is OK for now)
-      const processor = inCtx.createScriptProcessor(4096, 1, 1);
-      scriptProcessorRef.current = processor;
-
-      processor.onaudioprocess = (e) => {
-        try {
-          if (!activeSessionRef.current) return;
-
-          const channel0 = e.inputBuffer.getChannelData(0);
-          const pcmData = createPcmBlob(channel0);
-
-          activeSessionRef.current.send({
-            realtimeInput: {
-              mediaChunks: [
-                {
-                  data: pcmData,
-                  mimeType: `audio/pcm;rate=${inCtx.sampleRate || 16000}`,
-                },
-              ],
-            },
-          });
-        } catch (err) {
-          console.error("❌ Audio send error", err);
-        }
+      recorder.onerror = (ev) => {
+        console.error("Recorder error", ev);
       };
 
-      mediaSource.connect(processor);
-      processor.connect(inCtx.destination);
+      recorder.onstop = () => {
+        // לא חובה
+      };
+
+      // מתחילים הקלטה ב-chunks
+      recorder.start(CHUNK_MS);
+
+      // חשוב: טעינת voices (חלק מהדפדפנים טוענים באיחור)
+      try {
+        window.speechSynthesis?.getVoices?.();
+      } catch {}
 
       setStatus(ConnectionStatus.CONNECTED);
     } catch (e: any) {
-      console.error("❌ Connection failed", e);
+      console.error("Start failed", e);
       stopConversation();
-
-      const msg =
-        e?.message ||
-        e?.toString?.() ||
-        "Mic/Connection failed. Check permissions and API Key/model.";
-      alert(`Connection failed: ${msg}`);
+      alert(`Mic/Connection failed: ${e?.message || "Check mic permissions"}`);
     }
-  }, [
-    nativeLang.name,
-    selectedScenario.systemInstruction,
-    stopConversation,
-    targetLang.name,
-    hardCleanupAudioGraph,
-    playIncomingAudio,
-  ]);
+  }, [processQueue, stopConversation]);
 
   return (
     <div
@@ -293,9 +259,7 @@ const App: React.FC = () => {
           <div className="w-8 h-8 bg-indigo-600 rounded flex items-center justify-center shadow-lg shadow-indigo-500/20">
             <Headphones size={20} />
           </div>
-          <span className="font-black text-xl uppercase tracking-tighter">
-            LingoLive Pro
-          </span>
+          <span className="font-black text-xl uppercase tracking-tighter">LingoLive Pro</span>
         </div>
       </header>
 
@@ -307,11 +271,7 @@ const App: React.FC = () => {
                 <select
                   value={nativeLang.code}
                   onChange={(e) =>
-                    setNativeLang(
-                      SUPPORTED_LANGUAGES.find(
-                        (l) => l.code === e.target.value
-                      )!
-                    )
+                    setNativeLang(SUPPORTED_LANGUAGES.find((l) => l.code === e.target.value)!)
                   }
                   className="bg-slate-900 border border-white/10 rounded-xl px-4 py-2 text-sm font-bold w-full text-center"
                 >
@@ -322,19 +282,12 @@ const App: React.FC = () => {
                   ))}
                 </select>
 
-                <ArrowLeftRight
-                  size={20}
-                  className="text-indigo-500 shrink-0"
-                />
+                <ArrowLeftRight size={20} className="text-indigo-500 shrink-0" />
 
                 <select
                   value={targetLang.code}
                   onChange={(e) =>
-                    setTargetLang(
-                      SUPPORTED_LANGUAGES.find(
-                        (l) => l.code === e.target.value
-                      )!
-                    )
+                    setTargetLang(SUPPORTED_LANGUAGES.find((l) => l.code === e.target.value)!)
                   }
                   className="bg-slate-900 border border-white/10 rounded-xl px-4 py-2 text-sm font-bold w-full text-center"
                 >
@@ -359,9 +312,7 @@ const App: React.FC = () => {
                   }`}
                 >
                   <span className="text-3xl">{s.icon}</span>
-                  <span className="text-xs font-black uppercase tracking-widest">
-                    {t(s.title)}
-                  </span>
+                  <span className="text-xs font-black uppercase tracking-widest">{t(s.title)}</span>
                 </button>
               ))}
             </div>
@@ -379,11 +330,7 @@ const App: React.FC = () => {
             />
 
             <button
-              onClick={
-                status === ConnectionStatus.CONNECTED
-                  ? stopConversation
-                  : startConversation
-              }
+              onClick={status === ConnectionStatus.CONNECTED ? stopConversation : startConversation}
               className={`mt-8 px-12 py-5 rounded-full font-black text-2xl shadow-2xl flex items-center gap-4 transition-all active:scale-95 ${
                 status === ConnectionStatus.CONNECTED
                   ? "bg-red-500"
@@ -391,15 +338,14 @@ const App: React.FC = () => {
               }`}
             >
               <Mic size={28} />{" "}
-              {status === ConnectionStatus.CONNECTED
-                ? t("stop_conversation")
-                : t("start_conversation")}
+              {status === ConnectionStatus.CONNECTED ? t("stop_conversation") : t("start_conversation")}
             </button>
 
             {(isSpeaking || status === ConnectionStatus.CONNECTED) && (
               <div className="absolute bottom-8 w-full px-12">
                 <AudioVisualizer
                   isActive={true}
+                  // נשאר כמו אצלך (אם הרכיב משתמש בזה)
                   color={isSpeaking ? "#6366f1" : "#10b981"}
                 />
               </div>
