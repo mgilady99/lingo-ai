@@ -14,7 +14,6 @@ const App: React.FC = () => {
   const [selectedScenario, setSelectedScenario] = useState<PracticeScenario>(SCENARIOS[0]);
   const [isSpeaking, setIsSpeaking] = useState(false);
   
-  // משתני בדיקה לדיבאג
   const [keyStatus, setKeyStatus] = useState<string>("טוען...");
   const [keyColor, setKeyColor] = useState<string>("bg-gray-500");
 
@@ -24,18 +23,13 @@ const App: React.FC = () => {
   const outputAudioContextRef = useRef<AudioContext | null>(null);
   const nextStartTimeRef = useRef(0);
 
-  // בדיקה קריטית בעלייה
   useEffect(() => {
-    // Vite מחייב שהמשתנה יתחיל ב-VITE_
     const key = import.meta.env.VITE_API_KEY;
-    
-    console.log("Environment check:", key ? "Key exists" : "Key missing");
-
     if (key && key.length > 20) {
       setKeyStatus("המפתח זוהה בהצלחה ✅");
       setKeyColor("bg-green-600");
     } else {
-      setKeyStatus("שגיאה: משתנה VITE_API_KEY חסר בהגדרות Vercel");
+      setKeyStatus("שגיאה: VITE_API_KEY חסר!");
       setKeyColor("bg-red-600");
     }
   }, []);
@@ -51,11 +45,16 @@ const App: React.FC = () => {
   }, []);
 
   const startConversation = async () => {
-    // שליפה נכונה לפי התקן של Vite
-    const apiKey = import.meta.env.VITE_API_KEY;
+    // 1. שליפת המפתח
+    let apiKey = import.meta.env.VITE_API_KEY || "";
+
+    // 2. ניקוי אגרסיבי של המפתח (מסיר רווחים, מרכאות ושטויות)
+    apiKey = apiKey.trim().replace(/['"]/g, '');
+
+    console.log("Using API Key (First 5 chars):", apiKey.substring(0, 5) + "...");
 
     if (!apiKey) {
-      alert("שגיאה קריטית: המפתח חסר. וודא שב-Vercel המשתנה נקרא VITE_API_KEY");
+      alert("שגיאה: המפתח ריק אחרי ניקוי. בדוק את Vercel.");
       return;
     }
 
@@ -63,6 +62,7 @@ const App: React.FC = () => {
       stopConversation();
       setStatus(ConnectionStatus.CONNECTING);
 
+      // 3. יצירת החיבור עם המפתח הנקי
       const ai = new GoogleGenAI(apiKey);
       
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -83,9 +83,8 @@ const App: React.FC = () => {
             onopen: () => console.log("Connected"), 
             onmessage: () => {}, 
             onerror: (e) => {
-                console.error("Error:", e);
-                // הודעה מיוחדת למקרה של חסימת גישה
-                alert("המפתח זוהה אך החיבור נכשל. וודא ש-'Generative Language API' מופעל בפרויקט Firebase.");
+                console.error("Gemini Error:", e);
+                alert("שגיאת חיבור! (בדוק ב-F12 Console לפרטים נוספים)");
                 stopConversation();
             }, 
             onclose: () => console.log("Closed") 
@@ -124,13 +123,17 @@ const App: React.FC = () => {
         } catch(e) { stopConversation(); }
       })();
       setStatus(ConnectionStatus.CONNECTED);
-    } catch (e: any) { stopConversation(); alert(`Connection failed: ${e.message}`); }
+    } catch (e: any) { 
+      console.error("Connection Failed Logic:", e);
+      stopConversation(); 
+      alert(`Connection failed: ${e.message}`); 
+    }
   };
 
   return (
     <div className={`h-screen bg-slate-950 flex flex-col text-slate-200 overflow-hidden font-['Inter'] ${dir}`} dir={dir}>
       
-      {/* סרגל בדיקה - חובה להשאיר אותו עד שהבעיה נפתרת */}
+      {/* סרגל בדיקה */}
       <div className={`w-full ${keyColor} text-white font-bold p-3 text-center text-lg flex items-center justify-center gap-2 z-50 shadow-lg`}>
         {keyColor.includes('green') ? <CheckCircle size={24} /> : <AlertTriangle size={24} />}
         STATUS: {keyStatus}
