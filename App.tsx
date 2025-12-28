@@ -1,10 +1,9 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI } from '@google/genai'; // מחקנו את Modality
 import { Mic, AlertTriangle, CheckCircle, Square, Volume2, Radio } from 'lucide-react';
 import Avatar from './components/Avatar';
 import AudioVisualizer from './components/AudioVisualizer';
 
-// משתנה גלובלי למניעת כפילויות
 let isSessionActive = false;
 
 const App: React.FC = () => {
@@ -35,14 +34,14 @@ const App: React.FC = () => {
         audioContextRef.current = null;
     }
     if (sessionRef.current) {
-        sessionRef.current.close().catch(() => {});
+        // מנסים לסגור בלי להקריס
+        try { sessionRef.current.close(); } catch(e) {}
         sessionRef.current = null;
     }
     isSessionActive = false;
   }, []);
 
   const disconnect = useCallback(() => {
-    console.log("Stopping...");
     cleanup();
     setStatus("disconnected");
     setIsSpeaking(false);
@@ -66,11 +65,12 @@ const App: React.FC = () => {
       const session = await client.live.connect({
         model: "gemini-2.0-flash-exp",
         config: {
-          tools: [], // מונע קריסות פנימיות
+          tools: [], 
           generationConfig: {
-            responseModalities: ["AUDIO"],
+            // *** התיקון הקריטי: מחרוזת פשוטה במקום Enum ***
+            responseModalities: "AUDIO", 
             speechConfig: {
-              voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } }
+              voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } } // שיניתי קול לבדיקה
             }
           }
         },
@@ -79,7 +79,6 @@ const App: React.FC = () => {
                 console.log("Connected");
                 setStatus("connected");
                 setDebugLog("מחובר! דבר איתי...");
-                // ביטלנו את ה-Hello האוטומטי שגרם לקריסה
             },
             onMessage: (msg: any) => {
                 const parts = msg.serverContent?.modelTurn?.parts || [];
@@ -98,9 +97,8 @@ const App: React.FC = () => {
                 isSessionActive = false;
             },
             onError: (error: any) => {
-                // שינוי קריטי: רק מדפיסים שגיאה, לא מנתקים מיד!
-                console.error("Session Error (Ignored):", error);
-                setDebugLog("שגיאה קלה...");
+                console.error("Session Error:", error);
+                setDebugLog("שגיאה ברקע (ממשיך)");
             }
         }
       });
@@ -137,7 +135,6 @@ const App: React.FC = () => {
               lastVoiceTimeRef.current = Date.now();
               if (!isUserTalking) {
                   setIsUserTalking(true);
-                  // setDebugLog("שומע...");
               }
 
               const pcm16 = floatTo16BitPCM(inputData);
@@ -150,7 +147,7 @@ const App: React.FC = () => {
 
           } else if (isUserTalking) {
               const timeSinceVoice = Date.now() - lastVoiceTimeRef.current;
-              if (timeSinceVoice > 1500) { // 1.5 שניות שקט
+              if (timeSinceVoice > 1500) { 
                   console.log("Silence -> Turn Complete");
                   setDebugLog("⏳ ממתין לתשובה...");
                   
@@ -171,7 +168,7 @@ const App: React.FC = () => {
     } catch (err: any) {
         console.error(err);
         setDebugLog("שגיאה: " + err.message);
-        disconnect();
+        cleanup();
     }
   };
 
