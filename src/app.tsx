@@ -1,41 +1,23 @@
 import React, { useEffect } from 'react';
 
-const App = () => {
-  useEffect(() => {
-    console.log("V11 - SRC FOLDER TEST ACTIVE");
-  }, []);
+const App: React.FC = () => {
+  useEffect(() => { console.log("SYSTEM V13 ONLINE"); }, []);
 
-  const testSound = () => {
-    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const osc = audioCtx.createOscillator();
-    osc.connect(audioCtx.destination);
-    osc.start();
-    setTimeout(() => osc.stop(), 500);
+  const testAudio = () => {
+    const speech = new SpeechSynthesisUtterance("System connected successfully");
+    window.speechSynthesis.speak(speech);
   };
 
   return (
-    <div style={{ height: '100vh', backgroundColor: '#111', color: 'white', margin: 0 }}>
-      {/* אם אתה רואה את הפס הצהוב הזה, סימן שתיקיית ה-src עובדת! */}
-      <div style={{ 
-        width: '100%', 
-        backgroundColor: '#facc15', 
-        color: '#000', 
-        padding: '40px', 
-        textAlign: 'center', 
-        fontWeight: 'bold', 
-        fontSize: '2.5rem' 
-      }}>
-        ⚠️ V11 - YELLOW BAR (IN SRC FOLDER) ⚠️
+    <div className="h-screen flex flex-col bg-black text-white">
+      <div className="w-full bg-yellow-400 text-black py-8 text-center font-black text-3xl">
+        ⚠️ V13 - YELLOW BAR ACTIVE ⚠️
       </div>
-      
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', gap: '30px' }}>
-        <button 
-          onClick={testSound}
-          style={{ padding: '30px 60px', fontSize: '2rem', cursor: 'pointer', borderRadius: '15px', backgroundColor: 'white', color: 'black' }}
-        >
-          🔊 נגן צליל בדיקה
+      <div className="flex-1 flex flex-col items-center justify-center gap-10">
+        <button onClick={testAudio} className="bg-blue-600 px-12 py-6 rounded-2xl text-2xl font-bold">
+          🔊 לחץ לבדיקת קול
         </button>
-        <p style={{ fontSize: '1.2rem' }}>האם אתה רואה את הפס הצהוב?</p>
+        <p className="text-xl">אם אתה רואה צהוב ושומע קול - הצלחנו</p>
       </div>
     </div>
   );
