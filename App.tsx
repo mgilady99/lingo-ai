@@ -1,174 +1,113 @@
-import React, { useState, useRef, useCallback } from 'react';
+
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { Mic, Activity, Square, Play, Volume2 } from 'lucide-react';
+import { Mic, Activity, Square, Play, ShieldCheck } from 'lucide-react';
 import Avatar from './components/Avatar';
-import AudioVisualizer from './components/AudioVisualizer';
 
 const App: React.FC = () => {
-  const [connectionStatus, setConnectionStatus] = useState<"disconnected" | "connected">("disconnected");
-  const [isMicActive, setIsMicActive] = useState(false);
-  const [debugLog, setDebugLog] = useState<string>("ממתין להעלאה חדשה..."); 
-  const [micVol, setMicVol] = useState<number>(0);
-  const [aiSpeaking, setAiSpeaking] = useState(false);
+  // זיהוי גרסה בקונסול
+  useEffect(() => {
+    console.log("%c >>> NEW DIAGNOSTIC VERSION LOADED <<< ", "background: #f00; color: #fff; font-size: 20px;");
+  }, []);
+
+  const [status, setStatus] = useState<"disconnected" | "connected">("disconnected");
+  const [isMicOn, setIsMicOn] = useState(false);
+  const [log, setLog] = useState("ממתין להעלאת קוד חדש...");
 
   const sessionRef = useRef<any>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
 
-  // 1. שלב ראשון: חיבור שקט בלבד
-  const connectToGoogle = async () => {
+  // שלב 1: חיבור בלבד (ללא שליחת הודעות אוטומטיות)
+  const connectOnly = async () => {
     let apiKey = import.meta.env.VITE_API_KEY || "";
     apiKey = apiKey.trim().replace(/['"]/g, '');
-    if (!apiKey) return alert("חסר API KEY");
-
+    
     try {
-      setDebugLog("מנסה להתחבר לשרת...");
-      const client = new GoogleGenAI({ apiKey });
-      
-      const session = await client.live.connect({
+      setLog("מתחבר לשרת...");
+      const genAI = new GoogleGenAI({ apiKey });
+      const session = await genAI.live.connect({
         model: "gemini-2.0-flash-exp",
         config: { generationConfig: { responseModalities: "AUDIO" } },
         callbacks: {
-            onOpen: () => {
-                console.log("--- STEP 1 SUCCESSFUL ---"); // לוג לזיהוי הגרסה
-                setConnectionStatus("connected");
-                setDebugLog("✅ החיבור יציב! כעת הפעל מיקרופון.");
-            },
-            onMessage: (msg: any) => {
-                const parts = msg.serverContent?.modelTurn?.parts || [];
-                for (const part of parts) {
-                    if (part.inlineData && part.inlineData.mimeType.startsWith("audio")) {
-                        setAiSpeaking(true);
-                        playAudio(part.inlineData.data);
-                    }
-                }
-            },
-            onClose: (e: any) => {
-                setConnectionStatus("disconnected");
-                setIsMicActive(false);
-                setDebugLog(`החיבור נסגר (קוד ${e.code})`);
-            },
-            onError: (e: any) => {
-                console.error("DEBUG ERROR:", e);
-                setDebugLog("שגיאה בחיבור.");
-            }
+          onOpen: () => {
+            console.log("DIAGNOSTIC: Connection opened successfully");
+            setStatus("connected");
+            setLog("✅ החיבור יציב! כעת נסה להפעיל מיקרופון.");
+          },
+          onClose: (e) => {
+            setStatus("disconnected");
+            setLog(`החיבור נסגר (קוד: ${e.code})`);
+          },
+          onError: (err) => {
+            console.error("DIAGNOSTIC ERROR:", err);
+            setLog("שגיאה בחיבור.");
+          }
         }
       });
-
       sessionRef.current = session;
-    } catch (e: any) {
-        setDebugLog("כישלון: " + e.message);
-    }
+    } catch (e: any) { setLog("כישלון: " + e.message); }
   };
 
-  // 2. שלב שני: הפעלת מיקרופון ידנית
   const startMic = async () => {
-      if (!sessionRef.current) return;
-      try {
-          setDebugLog("מפעיל מיקרופון...");
-          const ctx = new window.AudioContext({ sampleRate: 16000 });
-          await ctx.resume();
-          audioContextRef.current = ctx;
-
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 16000 } });
-          streamRef.current = stream;
-
-          const source = ctx.createMediaStreamSource(stream);
-          const processor = ctx.createScriptProcessor(4096, 1, 1);
-          processorRef.current = processor;
-
-          processor.onaudioprocess = (e) => {
-              const inputData = e.inputBuffer.getChannelData(0);
-              let sum = 0;
-              for (let i = 0; i < inputData.length; i += 50) sum += Math.abs(inputData[i]);
-              setMicVol(Math.round(sum * 100));
-
-              if (sessionRef.current) {
-                  const pcm16 = floatTo16BitPCM(inputData);
-                  sessionRef.current.sendRealtimeInput({
-                      mediaChunks: [{ mimeType: "audio/pcm", data: pcm16 }]
-                  });
-              }
-          };
-
-          source.connect(processor);
-          processor.connect(ctx.destination);
-          setIsMicActive(true);
-          setDebugLog("🎤 מיקרופון מזרים דאטה...");
-      } catch (e: any) { setDebugLog("שגיאת מיקרופון."); }
-  };
-
-  const floatTo16BitPCM = (float32Array: Float32Array) => {
-    const buffer = new ArrayBuffer(float32Array.length * 2);
-    const view = new DataView(buffer);
-    for (let i = 0; i < float32Array.length; i++) {
-      let s = Math.max(-1, Math.min(1, float32Array[i]));
-      view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-    }
-    return btoa(String.fromCharCode(...new Uint8Array(buffer)));
-  };
-
-  const playAudio = (b64Data: string) => {
-    if (!audioContextRef.current) return;
+    if (!sessionRef.current) return;
     try {
-        const ctx = audioContextRef.current;
-        const binaryString = atob(b64Data);
-        const len = binaryString.length;
-        const bytes = new Uint8Array(len);
-        for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
-        const pcm16 = new Int16Array(bytes.buffer);
-        const audioBuffer = ctx.createBuffer(1, pcm16.length, 24000);
-        const channelData = audioBuffer.getChannelData(0);
-        for (let i=0; i<pcm16.length; i++) channelData[i] = pcm16[i] / 32768.0;
-        const sourceNode = ctx.createBufferSource();
-        sourceNode.buffer = audioBuffer;
-        sourceNode.connect(ctx.destination);
-        sourceNode.onended = () => setAiSpeaking(false);
-        sourceNode.start();
-    } catch (e) { console.error(e); }
+      setLog("מפעיל מיקרופון...");
+      const ctx = new AudioContext({ sampleRate: 16000 });
+      audioCtxRef.current = ctx;
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const source = ctx.createMediaStreamSource(stream);
+      const processor = ctx.createScriptProcessor(4096, 1, 1);
+      
+      processor.onaudioprocess = (e) => {
+        const input = e.inputBuffer.getChannelData(0);
+        const buffer = new ArrayBuffer(input.length * 2);
+        const view = new DataView(buffer);
+        for (let i = 0; i < input.length; i++) {
+          let s = Math.max(-1, Math.min(1, input[i]));
+          view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+        }
+        const b64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+        sessionRef.current.sendRealtimeInput({ mediaChunks: [{ data: b64, mimeType: "audio/pcm" }] });
+      };
+
+      source.connect(processor);
+      processor.connect(ctx.destination);
+      setIsMicOn(true);
+      setLog("🎤 מיקרופון משדר בזמן אמת.");
+    } catch (e) { setLog("שגיאת מיקרופון."); }
   };
 
   return (
-    <div className="h-screen bg-slate-950 flex flex-col items-center justify-center text-white font-sans p-4">
-      <div className="absolute top-4 w-full max-w-md bg-slate-900/80 p-4 rounded-xl border border-white/10 text-center shadow-xl">
-        <div className="flex items-center justify-center gap-3 mb-2">
-            <div className={`w-3 h-3 rounded-full ${connectionStatus === "connected" ? "bg-green-500" : "bg-red-500"}`} />
-            <span className="font-bold text-sm uppercase">{connectionStatus}</span>
+    <div className="h-screen bg-black flex flex-col items-center justify-center text-white p-6">
+      <div className="mb-10 text-center bg-zinc-900 p-6 rounded-2xl border border-zinc-800 shadow-2xl">
+        <div className="flex items-center justify-center gap-3 mb-4">
+          <ShieldCheck className={status === "connected" ? "text-green-500" : "text-red-500"} />
+          <span className="font-mono text-xl uppercase tracking-tighter">{status}</span>
         </div>
-        <div className="bg-black/40 rounded px-2 py-1 text-xs font-mono text-cyan-300 mb-2">LOG: {debugLog}</div>
+        <p className="text-cyan-400 font-mono text-sm bg-black/50 p-3 rounded-lg border border-cyan-900/30">
+          LOG: {log}
+        </p>
       </div>
 
-      <div className="relative flex flex-col items-center gap-8">
-        <Avatar state={aiSpeaking ? 'speaking' : (isMicActive ? 'listening' : 'idle')} />
-        
-        <div className="flex gap-4">
-            {connectionStatus === "disconnected" ? (
-                <button 
-                    onClick={connectToGoogle}
-                    className="flex items-center gap-2 px-8 py-4 rounded-full font-bold bg-orange-600 hover:bg-orange-500 shadow-xl"
-                >
-                    <Activity size={20} /> 1. Test Connection
-                </button>
-            ) : (
-                <>
-                    {!isMicActive && (
-                        <button 
-                            onClick={startMic}
-                            className="flex items-center gap-2 px-8 py-4 rounded-full font-bold bg-green-600 hover:bg-green-500 shadow-xl"
-                        >
-                            <Mic size={20} /> 2. Start Mic
-                        </button>
-                    )}
-                    <button 
-                        onClick={() => window.location.reload()}
-                        className="flex items-center gap-2 px-8 py-4 rounded-full font-bold bg-red-600 hover:bg-red-500 shadow-xl"
-                    >
-                        <Square size={20} /> Reset
-                    </button>
-                </>
+      <Avatar state={status === "connected" ? (isMicOn ? "listening" : "idle") : "idle"} />
+
+      <div className="mt-12 flex gap-6">
+        {status === "disconnected" ? (
+          <button onClick={connectOnly} className="bg-orange-600 hover:bg-orange-500 px-10 py-5 rounded-full font-bold text-lg flex items-center gap-3 transition-all transform hover:scale-105 shadow-[0_0_20px_rgba(234,88,12,0.4)]">
+            <Activity size={24} /> 1. Connect Test
+          </button>
+        ) : (
+          <>
+            {!isMicOn && (
+              <button onClick={startMic} className="bg-green-600 hover:bg-green-500 px-10 py-5 rounded-full font-bold text-lg flex items-center gap-3 transition-all shadow-[0_0_20px_rgba(22,163,74,0.4)]">
+                <Mic size={24} /> 2. Start Mic
+              </button>
             )}
-        </div>
+            <button onClick={() => window.location.reload()} className="bg-zinc-800 hover:bg-zinc-700 px-8 py-5 rounded-full font-bold flex items-center gap-3 transition-all">
+              <Square size={20} /> Force Reset
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
