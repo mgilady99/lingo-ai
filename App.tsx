@@ -1,24 +1,46 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { Mic, Activity, Square, Play, Radio } from 'lucide-react';
 import Avatar from './components/Avatar';
 import AudioVisualizer from './components/AudioVisualizer';
 
 const App: React.FC = () => {
-  // ניהול מצבים ידני
+  // --- סימן זיהוי לטעינת הקוד החדש ---
+  useEffect(() => {
+    console.log("%c SYSTEM RELOADED - V3 ", "background: #00ff00; color: #000; font-size: 20px; font-weight: bold;");
+  }, []);
+
   const [connectionStatus, setConnectionStatus] = useState<"disconnected" | "connected">("disconnected");
   const [isMicActive, setIsMicActive] = useState(false);
-  const [debugLog, setDebugLog] = useState<string>("ממתין לפקודה..."); 
+  const [debugLog, setDebugLog] = useState<string>("ממתין להפעלה ידנית..."); 
   const [micVol, setMicVol] = useState<number>(0);
   const [aiSpeaking, setAiSpeaking] = useState(false);
 
-  // משאבים
   const sessionRef = useRef<any>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // --- 1. פונקציית התחברות (ללא אודיו, ללא שליחת הודעות) ---
+  // 1. פונקציית ניתוק נקייה
+  const disconnect = useCallback(async () => {
+    console.log(">> Disconnecting...");
+    setDebugLog("מתנתק...");
+    
+    if (processorRef.current) { processorRef.current.disconnect(); processorRef.current = null; }
+    if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
+    if (audioContextRef.current) { await audioContextRef.current.close(); audioContextRef.current = null; }
+
+    if (sessionRef.current) {
+        try { await sessionRef.current.close(); } catch(e) { console.warn(e); }
+        sessionRef.current = null;
+    }
+
+    setConnectionStatus("disconnected");
+    setIsMicActive(false);
+    setDebugLog("מנותק.");
+  }, []);
+
+  // 2. כפתור 1: רק חיבור לשרת (בלי אודיו)
   const connectToGoogle = async () => {
     let apiKey = import.meta.env.VITE_API_KEY || "";
     apiKey = apiKey.trim().replace(/['"]/g, '');
@@ -35,10 +57,10 @@ const App: React.FC = () => {
         },
         callbacks: {
             onOpen: () => {
-                console.log(">> Connected!");
+                console.log(">> SOCKET OPENED"); // לוג חדש
                 setConnectionStatus("connected");
-                setDebugLog("✅ מחובר! (המתן...)");
-                // לא שולחים כלום כאן!
+                setDebugLog("✅ מחובר! עכשיו לחץ על Start Mic");
+                // שים לב: אין כאן Sending Hello
             },
             onMessage: (msg: any) => {
                 const parts = msg.serverContent?.modelTurn?.parts || [];
@@ -58,7 +80,7 @@ const App: React.FC = () => {
             },
             onError: (e: any) => {
                 console.error(">> Error:", e);
-                setDebugLog("שגיאה (לא מתנתק)");
+                setDebugLog("שגיאה (לא מנתק)");
             }
         }
       });
@@ -72,7 +94,7 @@ const App: React.FC = () => {
     }
   };
 
-  // --- 2. פונקציית מיקרופון (רק לאחר חיבור) ---
+  // 3. כפתור 2: הפעלת מיקרופון (רק כשהחיבור יציב)
   const startMicrophoneStream = async () => {
       if (!sessionRef.current) return alert("קודם תתחבר!");
       if (isMicActive) return;
@@ -80,7 +102,6 @@ const App: React.FC = () => {
       try {
           setDebugLog("מפעיל מיקרופון...");
           
-          // כפיית קצב דגימה 16kHz
           const ctx = new window.AudioContext({ sampleRate: 16000 });
           await ctx.resume();
           audioContextRef.current = ctx;
@@ -131,32 +152,13 @@ const App: React.FC = () => {
       }
   };
 
-  // --- 3. שליחת סיום תור ידנית ---
+  // כפתור חילוץ
   const sendEndTurn = () => {
       if (sessionRef.current) {
           setDebugLog("שולח סימן סיום...");
           sessionRef.current.sendClientContent({ turns: [], turnComplete: true });
       }
   };
-
-  // --- 4. ניתוק ---
-  const disconnect = useCallback(async () => {
-    console.log(">> User Disconnecting...");
-    setDebugLog("מתנתק...");
-    
-    if (processorRef.current) { processorRef.current.disconnect(); processorRef.current = null; }
-    if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
-    if (audioContextRef.current) { await audioContextRef.current.close(); audioContextRef.current = null; }
-
-    if (sessionRef.current) {
-        try { await sessionRef.current.close(); } catch(e) {}
-        sessionRef.current = null;
-    }
-
-    setConnectionStatus("disconnected");
-    setIsMicActive(false);
-    setDebugLog("מנותק.");
-  }, []);
 
   // --- עזרים ---
   const floatTo16BitPCM = (float32Array: Float32Array) => {
