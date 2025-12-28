@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useCallback } from 'react';
 import { GoogleGenAI, Modality } from '@google/genai';
 import { Mic, AlertTriangle, CheckCircle, Square, Volume2 } from 'lucide-react';
@@ -20,7 +19,7 @@ const App: React.FC = () => {
   const lastVoiceTimeRef = useRef<number>(0);
   const silenceTriggeredRef = useRef<boolean>(false);
 
-  // --- עזרי אודיו ---
+  // --- עזרי אודיו (חייב להישאר כדי לתמוך ב-16kHz) ---
   const floatTo16BitPCM = (float32Array: Float32Array) => {
     const buffer = new ArrayBuffer(float32Array.length * 2);
     const view = new DataView(buffer);
@@ -49,30 +48,26 @@ const App: React.FC = () => {
     return result;
   };
 
-  // --- פונקציית שליחה חכמה ובטוחה ---
+  // --- שליחה בטוחה ---
   const safeSend = (data: any) => {
       const s = activeSessionRef.current;
       if (!s) return;
       try {
-          // מנסים את כל האפשרויות כדי לא לקרוס
           if (typeof s.sendRealtimeInput === 'function' && data.realtimeInput) {
               s.sendRealtimeInput(data.realtimeInput);
           } else if (typeof s.sendClientContent === 'function' && data.clientContent) {
               s.sendClientContent(data.clientContent);
           } else if (typeof s.send === 'function') {
               s.send(data);
-          } else {
-              console.warn("No send method found on session object");
           }
       } catch (e) { 
-          console.error("SafeSend Error:", e); 
+          // התעלמות משגיאות שליחה רגעיות
       }
   };
 
   const stopConversation = useCallback(() => {
     if (processorRef.current) { processorRef.current.disconnect(); processorRef.current = null; }
     if (activeSessionRef.current) { 
-        // מנסים לסגור בצורה נקייה
         try { activeSessionRef.current.close(); } catch (e) {} 
         activeSessionRef.current = null; 
     }
@@ -102,7 +97,7 @@ const App: React.FC = () => {
 
       const ai = new GoogleGenAI({ apiKey: apiKey });
       
-      // 1. חיבור ללא Callbacks (מונע את הקריסה!)
+      // *** השינוי הגדול: הסרנו את ה-CALLBACKS שגורמים לקריסה ***
       const session = await ai.live.connect({
         model: "gemini-2.0-flash-exp",
         config: { 
@@ -112,18 +107,16 @@ const App: React.FC = () => {
       });
 
       activeSessionRef.current = session;
-      
-      // עדכון ידני שהחיבור הצליח
-      console.log("Connected successfully!");
       setStatus("connected");
-      setDebugLog("מחובר! (מבצע התנעה...)");
+      setDebugLog("מחובר! (מתניע...)");
 
       // Kickstart - שליחת הודעה ראשונה
       setTimeout(() => {
+          console.log("Sending Hello...");
           safeSend({ clientContent: { turns: [{ role: 'user', parts: [{ text: "Hello" }] }] }, turnComplete: true });
       }, 1000);
 
-      // 2. הפעלת מיקרופון
+      // מיקרופון
       const stream = await navigator.mediaDevices.getUserMedia({ 
           audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true } 
       });
@@ -150,9 +143,9 @@ const App: React.FC = () => {
         const vol = Math.round(sum * 100);
         setMicVol(vol);
 
-        // VAD - לוגיקה לזיהוי שתיקה
+        // VAD (זיהוי שתיקה)
         if (vol > 5) { 
-            // המשתמש מדבר
+            // מדברים
             lastVoiceTimeRef.current = Date.now();
             silenceTriggeredRef.current = false;
             if (!isUserTalking) setIsUserTalking(true);
@@ -165,23 +158,19 @@ const App: React.FC = () => {
         } else if (isUserTalking && !silenceTriggeredRef.current) {
             // שקט... בודקים כמה זמן
             const timeSinceVoice = Date.now() - lastVoiceTimeRef.current;
-            if (timeSinceVoice > 1200) { 
-                console.log("Silence detected -> Sending turnComplete");
+            if (timeSinceVoice > 1200) { // 1.2 שניות שקט
+                console.log("Silence detected -> Turn Complete");
                 setDebugLog("שתיקה -> מבקש תשובה");
-                
-                // שליחת פקודת "סיימתי לדבר"
                 safeSend({ clientContent: { turns: [] }, turnComplete: true });
-                
                 silenceTriggeredRef.current = true;
                 setIsUserTalking(false);
             }
         }
       };
 
-      // 3. לולאת האזנה (Async Iterator) - מחליפה את ה-callbacks שקרסו
+      // *** לולאת האזנה (במקום Callbacks) - זה מה שמונע את הקריסה ***
       (async () => {
         try {
-            // לולאה שמחכה להודעות מהשרת
             for await (const msg of session.listen()) {
                 const parts = msg.serverContent?.modelTurn?.parts || [];
                 for (const part of parts) {
@@ -190,7 +179,7 @@ const App: React.FC = () => {
                         setDebugLog("🔊 שומע תשובה...");
                         setIsSpeaking(true);
                         
-                        // ניגון האודיו
+                        // ניגון
                         const binaryString = atob(audioData);
                         const len = binaryString.length;
                         const bytes = new Uint8Array(len);
@@ -208,8 +197,8 @@ const App: React.FC = () => {
                     }
                 }
             }
-        } catch (e: any) {
-            console.error("Listen Loop Error:", e);
+        } catch (e) {
+            console.log("Session ended", e);
             setDebugLog("השיחה הסתיימה");
             stopConversation();
         }
