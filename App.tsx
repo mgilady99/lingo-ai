@@ -1,8 +1,11 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { Mic, AlertTriangle, CheckCircle, Square, Volume2, Send } from 'lucide-react';
+import { Mic, AlertTriangle, CheckCircle, Square, Volume2, Radio } from 'lucide-react';
 import Avatar from './components/Avatar';
 import AudioVisualizer from './components/AudioVisualizer';
+
+// משתנה גלובלי למניעת חיבור כפול ב-React StrictMode
+let isSessionActive = false;
 
 const App: React.FC = () => {
   const [status, setStatus] = useState<string>("disconnected");
@@ -11,7 +14,6 @@ const App: React.FC = () => {
   const [debugLog, setDebugLog] = useState<string>("מוכן"); 
   const [micVol, setMicVol] = useState<number>(0);
 
-  // Ref-ים לניהול מצב ללא רינדור מחדש
   const sessionRef = useRef<any>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -19,8 +21,9 @@ const App: React.FC = () => {
   const lastVoiceTimeRef = useRef<number>(0);
   const isWaitingForResponseRef = useRef<boolean>(false);
 
-  // פונקציית ניקוי (חשובה מאוד למניעת קריסות)
-  const cleanupAudio = useCallback(() => {
+  // פונקציית ניקוי יסודית
+  const cleanup = useCallback(() => {
+    console.log("Cleaning up resources...");
     if (processorRef.current) {
         processorRef.current.disconnect();
         processorRef.current = null;
@@ -33,24 +36,155 @@ const App: React.FC = () => {
         audioContextRef.current.close();
         audioContextRef.current = null;
     }
-  }, []);
-
-  const disconnect = useCallback(async () => {
-    cleanupAudio();
     if (sessionRef.current) {
-        try {
-            await sessionRef.current.close();
-        } catch (e) {
-            console.error("Error closing session", e);
-        }
+        sessionRef.current.close().catch(() => {});
         sessionRef.current = null;
     }
+    isSessionActive = false;
+  }, []);
+
+  const disconnect = useCallback(() => {
+    cleanup();
     setStatus("disconnected");
     setIsSpeaking(false);
     setDebugLog("מנותק");
-  }, [cleanupAudio]);
+  }, [cleanup]);
 
-  // עזרי אודיו
+  const connect = async () => {
+    if (isSessionActive) {
+        console.log("Session already active, ignoring connect request");
+        return;
+    }
+    
+    let apiKey = import.meta.env.VITE_API_KEY || "";
+    apiKey = apiKey.trim().replace(/['"]/g, '');
+    if (!apiKey) return alert("חסר API KEY");
+
+    try {
+      isSessionActive = true;
+      setStatus("connecting");
+      setDebugLog("מתחבר...");
+
+      const client = new GoogleGenAI({ apiKey });
+      
+      const session = await client.live.connect({
+        model: "gemini-2.0-flash-exp",
+        config: {
+          tools: [], // ביטול כלים למניעת קריסות פנימיות
+          generationConfig: {
+            responseModalities: ["AUDIO"],
+            speechConfig: {
+              voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } }
+            }
+          }
+        },
+        callbacks: {
+            onOpen: () => {
+                console.log("Session Opened");
+                setStatus("connected");
+                setDebugLog("מחובר! (דבר חופשי...)");
+                // ביטלנו את ה-Hello האוטומטי שגרם לקריסה
+            },
+            onMessage: (msg: any) => {
+                const parts = msg.serverContent?.modelTurn?.parts || [];
+                for (const part of parts) {
+                    if (part.inlineData && part.inlineData.mimeType.startsWith("audio")) {
+                        // ה-AI מדבר
+                        isWaitingForResponseRef.current = false;
+                        setDebugLog("🔊 ה-AI מדבר");
+                        playAudioData(part.inlineData.data);
+                    }
+                }
+            },
+            onClose: (event: any) => {
+                console.log("Session Closed:", event);
+                setStatus("disconnected");
+                setDebugLog(`נותק (קוד: ${event.code})`);
+                isSessionActive = false;
+            },
+            onError: (error: any) => {
+                console.error("Session Error:", error);
+                setDebugLog("שגיאה בחיבור");
+                disconnect();
+            }
+        }
+      });
+
+      sessionRef.current = session;
+
+      // הגדרת אודיו (מיקרופון)
+      const ctx = new window.AudioContext();
+      await ctx.resume();
+      audioContextRef.current = ctx;
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+              channelCount: 1,
+              sampleRate: 16000,
+          }
+      });
+      streamRef.current = stream;
+
+      const source = ctx.createMediaStreamSource(stream);
+      const processor = ctx.createScriptProcessor(4096, 1, 1);
+      processorRef.current = processor;
+
+      processor.onaudioprocess = (e) => {
+          if (!sessionRef.current || isWaitingForResponseRef.current) return;
+
+          const inputData = e.inputBuffer.getChannelData(0);
+          
+          // חישוב ווליום
+          let sum = 0;
+          for (let i = 0; i < inputData.length; i += 50) sum += Math.abs(inputData[i]);
+          const vol = Math.round(sum * 100);
+          setMicVol(vol);
+
+          // זיהוי דיבור (VAD)
+          if (vol > 10) {
+              lastVoiceTimeRef.current = Date.now();
+              if (!isUserTalking) {
+                  setIsUserTalking(true);
+              }
+
+              // המרת אודיו ושליחה
+              const pcm16 = floatTo16BitPCM(inputData);
+              sessionRef.current.sendRealtimeInput({
+                  mediaChunks: [{
+                      mimeType: "audio/pcm",
+                      data: pcm16
+                  }]
+              });
+
+          } else if (isUserTalking) {
+              // בדיקת שתיקה
+              const timeSinceVoice = Date.now() - lastVoiceTimeRef.current;
+              if (timeSinceVoice > 1200) { // 1.2 שניות שקט
+                  console.log("Silence detected -> Ending turn");
+                  setDebugLog("⏳ ממתין לתשובה...");
+                  
+                  sessionRef.current.sendClientContent({
+                      turns: [],
+                      turnComplete: true
+                  });
+
+                  isWaitingForResponseRef.current = true;
+                  setIsUserTalking(false);
+              }
+          }
+      };
+
+      source.connect(processor);
+      processor.connect(ctx.destination);
+
+    } catch (err: any) {
+        console.error(err);
+        setDebugLog("שגיאה: " + err.message);
+        disconnect();
+    }
+  };
+
+  // עזרים
   const floatTo16BitPCM = (float32Array: Float32Array) => {
     const buffer = new ArrayBuffer(float32Array.length * 2);
     const view = new DataView(buffer);
@@ -61,25 +195,7 @@ const App: React.FC = () => {
     return btoa(String.fromCharCode(...new Uint8Array(buffer)));
   };
 
-  const downsampleBuffer = (buffer: Float32Array, inputRate: number, outputRate: number) => {
-    if (outputRate === inputRate) return buffer;
-    const sampleRateRatio = inputRate / outputRate;
-    const newLength = Math.round(buffer.length / sampleRateRatio);
-    const result = new Float32Array(newLength);
-    for (let i = 0; i < newLength; i++) {
-      const nextOffset = Math.round((i + 1) * sampleRateRatio);
-      const currOffset = Math.round(i * sampleRateRatio);
-      let accum = 0, count = 0;
-      for (let j = currOffset; j < nextOffset && j < buffer.length; j++) {
-        accum += buffer[j];
-        count++;
-      }
-      result[i] = count > 0 ? accum / count : 0;
-    }
-    return result;
-  };
-
-  const playAudioData = async (b64Data: string) => {
+  const playAudioData = (b64Data: string) => {
     if (!audioContextRef.current) return;
     try {
         const ctx = audioContextRef.current;
@@ -104,151 +220,6 @@ const App: React.FC = () => {
     }
   };
 
-  const connect = async () => {
-    let apiKey = import.meta.env.VITE_API_KEY || "";
-    apiKey = apiKey.trim().replace(/['"]/g, '');
-    if (!apiKey) return alert("חסר API KEY");
-
-    // ניתוק קודם אם קיים
-    await disconnect();
-
-    setStatus("connecting");
-    setDebugLog("מתחבר...");
-
-    try {
-        const client = new GoogleGenAI({ apiKey });
-        
-        // הגדרת סשן עם כל ההגנות האפשריות
-        const session = await client.live.connect({
-            model: "gemini-2.0-flash-exp",
-            config: {
-                // ביטול כלים כדי למנוע קריסות פנימיות
-                tools: [], 
-                generationConfig: {
-                    responseModalities: ["AUDIO"],
-                    speechConfig: {
-                        voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } }
-                    }
-                }
-            },
-            callbacks: {
-                onOpen: () => {
-                    setStatus("connected");
-                    setDebugLog("מחובר! (מבצע אתחול...)");
-                    // שליחת הודעה ראשונית לחימום המנוע
-                    setTimeout(() => {
-                        session.sendClientContent({
-                            turns: [{ role: "user", parts: [{ text: "Hello" }] }],
-                            turnComplete: true
-                        });
-                    }, 500);
-                },
-                onMessage: (msg: any) => {
-                    const parts = msg.serverContent?.modelTurn?.parts || [];
-                    for (const part of parts) {
-                        if (part.inlineData && part.inlineData.mimeType.startsWith("audio")) {
-                            isWaitingForResponseRef.current = false; // קיבלנו תשובה, אפשר לשחרר את המיקרופון
-                            setDebugLog("🔊 ה-AI מדבר");
-                            playAudioData(part.inlineData.data);
-                        }
-                    }
-                },
-                onClose: (event: any) => {
-                    console.log("Session closed", event);
-                    setStatus("disconnected");
-                    setDebugLog(`נותק (קוד: ${event.code || 'unknown'})`);
-                },
-                onError: (error: any) => {
-                    console.error("Session error", error);
-                    setDebugLog("שגיאה בחיבור");
-                    disconnect();
-                }
-            }
-        });
-
-        sessionRef.current = session;
-
-        // אתחול אודיו (מיקרופון)
-        const ctx = new window.AudioContext();
-        await ctx.resume();
-        audioContextRef.current = ctx;
-
-        const stream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-                channelCount: 1,
-                sampleRate: 16000,
-            }
-        });
-        streamRef.current = stream;
-
-        const source = ctx.createMediaStreamSource(stream);
-        const processor = ctx.createScriptProcessor(4096, 1, 1);
-        processorRef.current = processor;
-
-        processor.onaudioprocess = (e) => {
-            // אם אנחנו לא מחוברים או מחכים לתשובה - לא לשלוח כלום
-            if (!sessionRef.current || isWaitingForResponseRef.current) return;
-
-            const inputData = e.inputBuffer.getChannelData(0);
-            
-            // חישוב עוצמת קול (VAD)
-            let sum = 0;
-            for (let i = 0; i < inputData.length; i += 50) sum += Math.abs(inputData[i]);
-            const vol = Math.round(sum * 100);
-            setMicVol(vol);
-
-            // לוגיקת VAD
-            if (vol > 5) {
-                lastVoiceTimeRef.current = Date.now();
-                if (!isUserTalking) setIsUserTalking(true);
-
-                // שליחת אודיו בזמן אמת
-                const pcm16 = floatTo16BitPCM(inputData); // קלט כבר ב-16k בגלל getUserMedia
-                sessionRef.current.sendRealtimeInput({
-                    mediaChunks: [{
-                        mimeType: "audio/pcm",
-                        data: pcm16
-                    }]
-                });
-
-            } else if (isUserTalking) {
-                // זיהוי שתיקה
-                const timeSinceVoice = Date.now() - lastVoiceTimeRef.current;
-                if (timeSinceVoice > 1200) { // 1.2 שניות שקט
-                    console.log("Silence detected -> Ending turn");
-                    setDebugLog("⏳ סיימת לדבר. ממתין...");
-                    
-                    // שליחת סימן שהתור נגמר
-                    sessionRef.current.sendClientContent({
-                        turns: [],
-                        turnComplete: true
-                    });
-
-                    isWaitingForResponseRef.current = true; // חוסם שליחה עד שתתקבל תשובה
-                    setIsUserTalking(false);
-                }
-            }
-        };
-
-        source.connect(processor);
-        processor.connect(ctx.destination); // נדרש כדי שה-ScriptProcessor יפעל בכרום
-
-    } catch (err: any) {
-        console.error(err);
-        setDebugLog("שגיאה בהתחברות: " + err.message);
-        disconnect();
-    }
-  };
-
-  // כפתור חילוץ ידני
-  const manualStop = () => {
-      if (sessionRef.current) {
-          setDebugLog("⚡ שליחה ידנית");
-          sessionRef.current.sendClientContent({ turns: [], turnComplete: true });
-          isWaitingForResponseRef.current = true;
-      }
-  };
-
   return (
     <div className="h-screen bg-slate-950 flex flex-col items-center justify-center text-white font-sans p-4">
       <div className="absolute top-4 w-full max-w-md bg-slate-900/80 p-4 rounded-xl border border-white/10 text-center shadow-xl backdrop-blur-md">
@@ -260,11 +231,10 @@ const App: React.FC = () => {
             LOG: {debugLog}
         </div>
         <div className="flex items-center justify-center gap-2">
-            <Volume2 size={16} className={micVol > 5 ? "text-green-400" : "text-slate-600"} />
+            <Radio size={16} className={micVol > 10 ? "text-green-400" : "text-slate-600"} />
             <div className="w-32 h-2 bg-slate-700 rounded-full overflow-hidden">
-                <div className={`h-full transition-all duration-75 ${micVol > 5 ? 'bg-green-500' : 'bg-slate-500'}`} style={{ width: `${Math.min(micVol, 100)}%` }} />
+                <div className={`h-full transition-all duration-75 ${micVol > 10 ? 'bg-green-500' : 'bg-slate-500'}`} style={{ width: `${Math.min(micVol, 100)}%` }} />
             </div>
-            <span className="text-xs text-slate-400">{micVol}</span>
         </div>
       </div>
 
@@ -286,16 +256,10 @@ const App: React.FC = () => {
                     <> <Mic size={24} /> Start </>
                 )}
             </button>
-            
-            {status === "connected" && (
-                <button onClick={manualStop} className="bg-gray-700 p-4 rounded-full hover:bg-gray-600">
-                    <Send size={24} />
-                </button>
-            )}
         </div>
       </div>
-
-      {status === "connected" && (
+      
+      {(status === "connected") && (
          <div className="fixed bottom-0 w-full h-32 pointer-events-none opacity-50">
             <AudioVisualizer isActive={true} color={isSpeaking ? "#a78bfa" : (isUserTalking ? "#34d399" : "#4b5563")} />
          </div>
