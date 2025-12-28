@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useCallback } from 'react';
 import { GoogleGenAI, Modality } from '@google/genai';
 import { Mic, AlertTriangle, CheckCircle, Square, Volume2 } from 'lucide-react';
@@ -78,26 +79,39 @@ const App: React.FC = () => {
 
       const ai = new GoogleGenAI({ apiKey: apiKey });
       
-      // *** שלב 1: חיבור נקי ללא Callbacks ***
-      // זה מונע את השגיאה TypeError: t is not a function
+      // הגדרת פונקציות דמי למניעת קריסה (ה"ביטוח")
+      const safeCallbacks = {
+        onopen: () => console.log("Safe: Open"),
+        onmessage: () => {}, // משאירים ריק כי אנחנו משתמשים בלולאה
+        onclose: () => console.log("Safe: Close"),
+        onerror: (e: any) => console.error("Safe: Error", e)
+      };
+
+      // חיבור עם הזרקה כפולה של Callbacks
       const session = await ai.live.connect({
         model: "gemini-2.0-flash-exp",
         config: { 
           responseModalities: [Modality.AUDIO],
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } }
+        },
+        callbacks: {
+            ...safeCallbacks,
+            // גרסה גדולה למקרה שהספרייה דורשת CamelCase
+            onOpen: safeCallbacks.onopen,
+            onMessage: safeCallbacks.onmessage,
+            onClose: safeCallbacks.onclose,
+            onError: safeCallbacks.onerror
         }
       });
 
       activeSessionRef.current = session;
       setStatus("connected");
-      setDebugLog("מחובר! שולח אות חיים...");
+      setDebugLog("מחובר! שולח 'שלום'...");
       isWaitingForResponseRef.current = false;
 
-      // *** שלב 2: Kickstart עם הפונקציה הנכונה לטקסט ***
+      // Kickstart - שימוש ב-sendClientContent (חובה לטקסט)
       setTimeout(() => {
           if (activeSessionRef.current) {
-              console.log("Sending Hello...");
-              // שימוש ב-sendClientContent לטקסט (קריטי!)
               activeSessionRef.current.sendClientContent({ 
                   turns: [{ role: 'user', parts: [{ text: "Hello" }] }], 
                   turnComplete: true 
@@ -105,7 +119,7 @@ const App: React.FC = () => {
           }
       }, 1000);
 
-      // *** שלב 3: מיקרופון ***
+      // מיקרופון
       const stream = await navigator.mediaDevices.getUserMedia({ 
           audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true } 
       });
@@ -131,28 +145,26 @@ const App: React.FC = () => {
         const vol = Math.round(sum * 100);
         setMicVol(vol);
 
-        // --- VAD (זיהוי שתיקה) ---
+        // VAD (זיהוי שתיקה)
         if (vol > 8) { 
-            // מדברים
             lastVoiceTimeRef.current = Date.now();
             if (!isUserTalking) setIsUserTalking(true);
             
             const downsampled = downsampleBuffer(inputData, ctx.sampleRate, 16000);
             const pcm16 = floatTo16BitPCM(downsampled);
             
-            // שימוש ב-sendRealtimeInput לאודיו (קריטי!)
+            // שימוש ב-sendRealtimeInput (חובה לאודיו)
             activeSessionRef.current.sendRealtimeInput({ 
                 mediaChunks: [{ data: pcm16, mimeType: 'audio/pcm;rate=16000' }] 
             });
 
         } else if (isUserTalking) {
-            // שתיקה
             const timeSinceVoice = Date.now() - lastVoiceTimeRef.current;
-            if (timeSinceVoice > 1500) { // 1.5 שניות שקט
+            if (timeSinceVoice > 1500) { 
                 console.log("Silence -> Force Reply");
                 setDebugLog("שתיקה -> מבקש תשובה...");
                 
-                // שימוש ב-sendClientContent לפקודת סיום (קריטי!)
+                // שליחת פקודת סיום
                 activeSessionRef.current.sendClientContent({ 
                     turns: [], 
                     turnComplete: true 
@@ -164,7 +176,7 @@ const App: React.FC = () => {
         }
       };
 
-      // *** שלב 4: לולאת האזנה חיצונית ***
+      // לולאת האזנה
       (async () => {
         try {
             for await (const msg of session.listen()) {
