@@ -1,5 +1,4 @@
 import React, { useState, useRef } from 'react';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const App = () => {
   const [status, setStatus] = useState("ready");
@@ -25,27 +24,29 @@ const App = () => {
     try {
       setDebugLog("🤔 חושב...");
       
-      // אתחול המודל בצורה שמונעת שגיאות גרסה
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ 
-        model: "gemini-1.5-flash"
+      // פנייה ישירה ל-API של גוגל בנתיב v1 היציב
+      const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: userText }] }]
+        })
       });
 
-      // שליחת הבקשה
-      const result = await model.generateContent(userText);
-      const response = await result.response;
-      const text = response.text();
+      const data = await response.json();
       
-      speak(text);
+      if (data.error) {
+        throw new Error(data.error.message);
+      }
+
+      const aiText = data.candidates[0].content.parts[0].text;
+      speak(aiText);
       setDebugLog("✅ עונה לך");
     } catch (e: any) {
-      console.error("Gemini Details:", e);
-      // בדיקה אם המפתח לא תקין
-      if (e.message?.includes("API_KEY_INVALID")) {
-        setDebugLog("❌ מפתח ה-API ב-Vercel לא תקין");
-      } else {
-        setDebugLog("❌ שגיאת תקשורת - בדוק את ה-Console");
-      }
+      console.error("Fetch Error:", e);
+      setDebugLog("❌ שגיאה: " + (e.message || "תקשורת"));
       setStatus("ready");
     }
   };
@@ -66,10 +67,8 @@ const App = () => {
       getAIResponse(transcript);
     };
 
-    recognition.onerror = (event: any) => {
-      if (status === "connected" && event.error !== 'aborted') {
-        try { recognition.start(); } catch(e) {}
-      }
+    recognition.onerror = () => {
+      if (status === "connected") try { recognition.start(); } catch(e) {}
     };
 
     try { recognition.start(); } catch(e) {}
@@ -79,15 +78,12 @@ const App = () => {
   const toggleSession = () => {
     if (status === "ready") {
       setStatus("connected");
-      speak("שלום, המערכת מוכנה. אני מקשיב.");
+      speak("שלום, אני מחוברת דרך הנתיב היציב. מה שלומך?");
       startListening();
     } else {
       setStatus("ready");
       window.speechSynthesis.cancel();
-      if (recognitionRef.current) {
-        recognitionRef.current.onresult = null;
-        recognitionRef.current.stop();
-      }
+      if (recognitionRef.current) recognitionRef.current.stop();
       setDebugLog("שיחה הסתיימה");
     }
   };
