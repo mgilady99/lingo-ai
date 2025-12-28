@@ -18,6 +18,7 @@ const App: React.FC = () => {
   const [keyColor, setKeyColor] = useState<string>("bg-gray-500");
   const [debugLog, setDebugLog] = useState<string>("מוכן"); 
   const [micVol, setMicVol] = useState<number>(0);
+  const [realSampleRate, setRealSampleRate] = useState<number>(0); // הצגת קצב הדגימה האמיתי
 
   const activeSessionRef = useRef<any>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
@@ -39,12 +40,30 @@ const App: React.FC = () => {
   const t = (key: string) => translations[nativeLang.code]?.[key] || translations['en-US']?.[key] || key;
   const dir = (nativeLang.code === 'he-IL' || nativeLang.code === 'ar-SA') ? 'rtl' : 'ltr';
 
-  // --- פונקציית המרה פשוטה ויעילה ל-PCM 16Bit ---
+  // --- פונקציות המרה (Resampling) ---
+  // דוחס את האודיו לקצב 16000 הרץ כדי שגוגל יבין את הדיבור
+  const downsampleBuffer = (buffer: Float32Array, inputRate: number, outputRate: number) => {
+    if (outputRate === inputRate) return buffer;
+    const sampleRateRatio = inputRate / outputRate;
+    const newLength = Math.round(buffer.length / sampleRateRatio);
+    const result = new Float32Array(newLength);
+    for (let i = 0; i < newLength; i++) {
+      const nextOffset = Math.round((i + 1) * sampleRateRatio);
+      const currOffset = Math.round(i * sampleRateRatio);
+      let accum = 0, count = 0;
+      for (let j = currOffset; j < nextOffset && j < buffer.length; j++) {
+        accum += buffer[j];
+        count++;
+      }
+      result[i] = count > 0 ? accum / count : 0;
+    }
+    return result;
+  };
+
   const convertFloat32ToInt16 = (buffer: Float32Array) => {
     let l = buffer.length;
     const buf = new Int16Array(l);
     while (l--) {
-      // המרה לקנה מידה של 16 ביט עם הגבלת עוצמה (Clipping)
       buf[l] = Math.min(1, Math.max(-1, buffer[l])) * 0x7FFF;
     }
     return buf;
@@ -88,6 +107,7 @@ const App: React.FC = () => {
     setIsSpeaking(false);
     setDebugLog("מנותק.");
     setMicVol(0);
+    setRealSampleRate(0);
   }, []);
 
   const startConversation = async () => {
@@ -103,16 +123,23 @@ const App: React.FC = () => {
 
       const ai = new GoogleGenAI({ apiKey: apiKey });
       
-      // 1. יצירת הקשר אודיו אחד (משותף)
-      const ctx = new AudioContext({ sampleRate: 16000 }); // מנסים לכפות 16k מההתחלה
+      // 1. יצירת הקשר אודיו (נותנים לדפדפן לבחור את הקצב הטבעי שלו)
+      const ctx = new AudioContext(); 
       await ctx.resume();
       audioContextRef.current = ctx;
+      setRealSampleRate(ctx.sampleRate); // הצגה למשתמש
 
-      // 2. חיבור ל-Gemini
+      // 2. הכנת ההוראות למודל
+      const systemInstructionText = selectedScenario.systemInstruction
+        .replace(/SOURCE_LANG/g, nativeLang.name)
+        .replace(/TARGET_LANG/g, targetLang.name);
+
+      // 3. חיבור ל-Gemini
       const session = await ai.live.connect({
         model: "gemini-2.0-flash-exp",
         config: { 
-          systemInstruction: selectedScenario.systemInstruction.replace(/SOURCE_LANG/g, nativeLang.name).replace(/TARGET_LANG/g, targetLang.name),
+          // שימוש באובייקט parts להוראות (חשוב למניעת ניתוקים)
+          systemInstruction: { parts: [{ text: systemInstructionText }] },
           responseModalities: [Modality.AUDIO], 
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } }
         },
@@ -128,8 +155,8 @@ const App: React.FC = () => {
                 setDebugLog("שגיאה בחיבור");
                 stopConversation();
             }, 
-            onclose: () => {
-                console.log("Closed by server");
+            onclose: (e) => {
+                console.log("Closed by server", e);
                 setDebugLog("השיחה הסתיימה");
                 stopConversation();
             }
@@ -137,19 +164,18 @@ const App: React.FC = () => {
       });
       activeSessionRef.current = session;
 
-      // 3. הפעלת מיקרופון
+      // 4. הפעלת מיקרופון
       const stream = await navigator.mediaDevices.getUserMedia({ 
           audio: {
-              sampleRate: 16000, 
               channelCount: 1,
-              echoCancellation: true, // חשוב מאוד!
+              echoCancellation: true,
               autoGainControl: true,
               noiseSuppression: true
           } 
       });
       micStreamRef.current = stream;
 
-      // 4. עיבוד אודיו (Input) - שיטה פשוטה יותר
+      // 5. עיבוד אודיו + תיקון קצב דגימה (Resampling)
       const source = ctx.createMediaStreamSource(stream);
       const processor = ctx.createScriptProcessor(4096, 1, 1);
       processorRef.current = processor;
@@ -157,15 +183,16 @@ const App: React.FC = () => {
       processor.onaudioprocess = (e) => {
         const inputData = e.inputBuffer.getChannelData(0);
         
-        // עדכון מד ווליום
+        // מד ווליום
         let sum = 0;
         for(let i=0; i<inputData.length; i+=50) sum += Math.abs(inputData[i]);
         setMicVol(Math.round(sum * 100));
 
         if (activeSessionRef.current && activeSessionRef.current.send) {
           try {
-              // המרה ישירה ל-PCM16 ושליחה
-              const pcm16 = convertFloat32ToInt16(inputData);
+              // *** כאן קורה הקסם: המרה מ-48000 ל-16000 ***
+              const downsampledData = downsampleBuffer(inputData, ctx.sampleRate, 16000);
+              const pcm16 = convertFloat32ToInt16(downsampledData);
               const base64Audio = arrayBufferToBase64(pcm16.buffer);
               
               activeSessionRef.current.send({ 
@@ -180,9 +207,9 @@ const App: React.FC = () => {
       };
       
       source.connect(processor);
-      processor.connect(ctx.destination); // נדרש בכרום כדי שהפרוססור יפעל
+      processor.connect(ctx.destination);
 
-      // 5. קבלת תשובות (Output)
+      // 6. קבלת תשובות
       (async () => {
         try {
           if (!session.listen) return;
@@ -192,14 +219,14 @@ const App: React.FC = () => {
               setDebugLog("שומע תשובה..."); 
               setIsSpeaking(true);
               
-              // פענוח וניגון
               const binaryString = atob(audioData);
               const len = binaryString.length;
               const bytes = new Uint8Array(len);
               for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
               
               const pcm16 = new Int16Array(bytes.buffer);
-              const audioBuffer = ctx.createBuffer(1, pcm16.length, 24000); // גוגל שולח ב-24k בד"כ
+              // גוגל שולח 24000 בדרך כלל
+              const audioBuffer = ctx.createBuffer(1, pcm16.length, 24000); 
               const channelData = audioBuffer.getChannelData(0);
               for (let i=0; i<pcm16.length; i++) {
                  channelData[i] = pcm16[i] / 32768.0;
@@ -234,11 +261,12 @@ const App: React.FC = () => {
             {keyColor.includes('green') ? <CheckCircle size={16} /> : <AlertTriangle size={16} />}
             STATUS: {keyStatus} 
         </div>
-        <div className="bg-black/20 px-3 py-1 rounded-full">LOG: {debugLog}</div>
+        <div className="bg-black/20 px-3 py-1 rounded-full">Rate: {realSampleRate}Hz</div>
         <div className="flex items-center gap-2 bg-black/20 px-3 py-1 rounded-full min-w-[80px]">
             <Activity size={16} className={micVol > 2 ? "text-green-400 animate-pulse" : "text-gray-500"} />
             <span>MIC: {micVol}</span>
         </div>
+         <div className="bg-black/20 px-3 py-1 rounded-full text-xs">LOG: {debugLog}</div>
       </div>
 
       <header className="p-4 flex items-center justify-between bg-slate-900/60 border-b border-white/5 backdrop-blur-xl shrink-0">
