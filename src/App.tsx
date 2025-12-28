@@ -25,21 +25,21 @@ const App = () => {
     try {
       setDebugLog("🤔 חושב...");
       
-      // אתחול מפורש של ה-API לגרסה היציבה
+      // אתחול מפורש עם הגדרת apiVersion לגרסה יציבה
       const genAI = new GoogleGenerativeAI(apiKey);
       const model = genAI.getGenerativeModel({ 
-        model: "gemini-1.5-flash",
+        model: "gemini-1.5-flash"
       });
 
+      // קריאה ישירה למודל
       const result = await model.generateContent(userText);
-      const response = await result.response;
-      const text = response.text();
+      const text = result.response.text();
       
       speak(text);
       setDebugLog("✅ עונה לך");
     } catch (e: any) {
-      console.error("Gemini Error:", e);
-      setDebugLog("❌ שגיאה בחיבור לבינה המלאכותית");
+      console.error("Full Error:", e);
+      setDebugLog("❌ שגיאת תקשורת עם גוגל");
     }
   };
 
@@ -61,7 +61,6 @@ const App = () => {
     };
 
     recognition.onerror = (event: any) => {
-      console.error("Speech Error:", event.error);
       if (status === "connected" && event.error !== 'aborted') {
         try { recognition.start(); } catch(e) {}
       }
@@ -74,7 +73,7 @@ const App = () => {
   const toggleSession = () => {
     if (status === "ready") {
       setStatus("connected");
-      speak("שלום, אני מקשיב. מה שלומך היום?");
+      speak("שלום, איך אפשר לעזור לך?");
       startListening();
     } else {
       setStatus("ready");
@@ -110,8 +109,7 @@ const App = () => {
           style={{
             padding: '15px 50px', fontSize: '1.2rem', borderRadius: '12px', border: 'none',
             backgroundColor: status === 'ready' ? '#4f46e5' : '#ef4444',
-            color: 'white', cursor: 'pointer', fontWeight: 'bold',
-            boxShadow: '0 4px 14px 0 rgba(0,0,0,0.39)'
+            color: 'white', cursor: 'pointer', fontWeight: 'bold'
           }}
         >
           {status === 'ready' ? 'התחל לדבר' : 'עצור'}
