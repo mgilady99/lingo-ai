@@ -17,7 +17,6 @@ const App: React.FC = () => {
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   
   const lastVoiceTimeRef = useRef<number>(0);
-  const silenceTriggeredRef = useRef<boolean>(false);
   const isWaitingForResponseRef = useRef<boolean>(false);
 
   // --- עזרי אודיו ---
@@ -47,20 +46,6 @@ const App: React.FC = () => {
       result[i] = count > 0 ? accum / count : 0;
     }
     return result;
-  };
-
-  // --- שליחה בטוחה ---
-  const sendToGemini = (data: any) => {
-      const s = activeSessionRef.current;
-      if (!s) return;
-      try {
-          if (typeof s.send === 'function') {
-              s.send(data);
-          } else {
-             // fallback למקרה שהשמות השתנו שוב
-             console.log("Using raw send");
-          }
-      } catch (e) { console.error("Send Error", e); }
   };
 
   const stopConversation = useCallback(() => {
@@ -93,31 +78,34 @@ const App: React.FC = () => {
 
       const ai = new GoogleGenAI({ apiKey: apiKey });
       
-      // *** התיקון הגדול: הגדרת callback ריק כדי למנוע קריסה ***
-      // אנחנו מעבירים את זה בתוך הקונפיג, לא בנפרד
+      // *** שלב 1: חיבור נקי ללא Callbacks ***
+      // זה מונע את השגיאה TypeError: t is not a function
       const session = await ai.live.connect({
         model: "gemini-2.0-flash-exp",
         config: { 
           responseModalities: [Modality.AUDIO],
-          // הסרתי זמנית את speechConfig כדי למנוע שגיאות שרת שגורמות לקריסה
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } }
         }
       });
 
-      // טריק למניעת הקריסה: אנחנו מזריקים לו פונקציה אם היא חסרה
-      if (!session.onMessage) session.onMessage = () => {}; 
-
       activeSessionRef.current = session;
       setStatus("connected");
-      setDebugLog("מחובר! דלג על שתיקות...");
+      setDebugLog("מחובר! שולח אות חיים...");
       isWaitingForResponseRef.current = false;
 
-      // Kickstart - שליחת הודעה
+      // *** שלב 2: Kickstart עם הפונקציה הנכונה לטקסט ***
       setTimeout(() => {
-          console.log("Sending Hello...");
-          sendToGemini({ clientContent: { turns: [{ role: 'user', parts: [{ text: "Hello" }] }] }, turnComplete: true });
+          if (activeSessionRef.current) {
+              console.log("Sending Hello...");
+              // שימוש ב-sendClientContent לטקסט (קריטי!)
+              activeSessionRef.current.sendClientContent({ 
+                  turns: [{ role: 'user', parts: [{ text: "Hello" }] }], 
+                  turnComplete: true 
+              });
+          }
       }, 1000);
 
-      // מיקרופון
+      // *** שלב 3: מיקרופון ***
       const stream = await navigator.mediaDevices.getUserMedia({ 
           audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true } 
       });
@@ -145,25 +133,30 @@ const App: React.FC = () => {
 
         // --- VAD (זיהוי שתיקה) ---
         if (vol > 8) { 
+            // מדברים
             lastVoiceTimeRef.current = Date.now();
-            silenceTriggeredRef.current = false;
             if (!isUserTalking) setIsUserTalking(true);
             
             const downsampled = downsampleBuffer(inputData, ctx.sampleRate, 16000);
             const pcm16 = floatTo16BitPCM(downsampled);
             
-            // שימוש ב-send הרגיל (הכי בטוח בגרסה זו)
-            sendToGemini({ realtimeInput: { mediaChunks: [{ data: pcm16, mimeType: 'audio/pcm;rate=16000' }] } });
+            // שימוש ב-sendRealtimeInput לאודיו (קריטי!)
+            activeSessionRef.current.sendRealtimeInput({ 
+                mediaChunks: [{ data: pcm16, mimeType: 'audio/pcm;rate=16000' }] 
+            });
 
         } else if (isUserTalking) {
+            // שתיקה
             const timeSinceVoice = Date.now() - lastVoiceTimeRef.current;
-            
             if (timeSinceVoice > 1500) { // 1.5 שניות שקט
                 console.log("Silence -> Force Reply");
-                setDebugLog("שתיקה -> מכריח תשובה...");
+                setDebugLog("שתיקה -> מבקש תשובה...");
                 
-                // שליחת סימן סיום מפורש
-                sendToGemini({ clientContent: { turns: [] }, turnComplete: true });
+                // שימוש ב-sendClientContent לפקודת סיום (קריטי!)
+                activeSessionRef.current.sendClientContent({ 
+                    turns: [], 
+                    turnComplete: true 
+                });
                 
                 isWaitingForResponseRef.current = true;
                 setIsUserTalking(false);
@@ -171,16 +164,15 @@ const App: React.FC = () => {
         }
       };
 
-      // לולאת האזנה
+      // *** שלב 4: לולאת האזנה חיצונית ***
       (async () => {
         try {
-            // הלולאה הזו היא הדרך הנכונה לקבל מידע, והיא עוקפת את ה-Callback הבעייתי
             for await (const msg of session.listen()) {
                 const parts = msg.serverContent?.modelTurn?.parts || [];
                 for (const part of parts) {
                     const audioData = part.inlineData?.data;
                     if (audioData) {
-                        setDebugLog("🔊 ה-AI עונה");
+                        setDebugLog("🔊 ה-AI מדבר");
                         setIsSpeaking(true);
                         isWaitingForResponseRef.current = false;
                         
