@@ -16,10 +16,12 @@ const App: React.FC = () => {
   const audioContextRef = useRef<AudioContext | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   
+  // משתנים לזיהוי שתיקה
   const lastVoiceTimeRef = useRef<number>(0);
-  const silenceTriggeredRef = useRef<boolean>(false);
+  const silenceTimerRef = useRef<any>(null);
+  const isWaitingForResponseRef = useRef<boolean>(false);
 
-  // --- עזרי אודיו (חובה להמרה ל-16kHz) ---
+  // --- עזרי אודיו ---
   const floatTo16BitPCM = (float32Array: Float32Array) => {
     const buffer = new ArrayBuffer(float32Array.length * 2);
     const view = new DataView(buffer);
@@ -48,8 +50,8 @@ const App: React.FC = () => {
     return result;
   };
 
-  // --- שליחה בטוחה (מנסה את כל הווריאציות כדי לא לקרוס) ---
-  const safeSend = (data: any) => {
+  // --- פונקציית שליחה אגרסיבית ---
+  const sendToGemini = (data: any) => {
       const s = activeSessionRef.current;
       if (!s) return;
       try {
@@ -60,20 +62,16 @@ const App: React.FC = () => {
           } else if (typeof s.send === 'function') {
               s.send(data);
           }
-      } catch (e) { 
-          // התעלמות משגיאות רגעיות כדי לא לעצור את הזרימה
-      }
+      } catch (e) { console.error(e); }
   };
 
   const stopConversation = useCallback(() => {
     if (processorRef.current) { processorRef.current.disconnect(); processorRef.current = null; }
-    if (activeSessionRef.current) { 
-        try { activeSessionRef.current.close(); } catch (e) {} 
-        activeSessionRef.current = null; 
-    }
+    if (activeSessionRef.current) { try { activeSessionRef.current.close(); } catch (e) {} activeSessionRef.current = null; }
     if (micStreamRef.current) { micStreamRef.current.getTracks().forEach(track => track.stop()); micStreamRef.current = null; }
     if (audioContextRef.current) { audioContextRef.current.suspend(); }
     
+    clearTimeout(silenceTimerRef.current);
     setStatus("disconnected");
     setIsSpeaking(false);
     setIsUserTalking(false);
@@ -97,8 +95,6 @@ const App: React.FC = () => {
 
       const ai = new GoogleGenAI({ apiKey: apiKey });
       
-      // *** התיקון הקריטי: חיבור ללא Callbacks ***
-      // זה מונע את השגיאה TypeError: t is not a function בתוך הספרייה
       const session = await ai.live.connect({
         model: "gemini-2.0-flash-exp",
         config: { 
@@ -110,14 +106,14 @@ const App: React.FC = () => {
       activeSessionRef.current = session;
       setStatus("connected");
       setDebugLog("מחובר! (מתניע...)");
+      isWaitingForResponseRef.current = false;
 
-      // שליחת Hello ראשוני (Kickstart)
+      // Kickstart
       setTimeout(() => {
-          console.log("Sending Kickstart...");
-          safeSend({ clientContent: { turns: [{ role: 'user', parts: [{ text: "Hello" }] }] }, turnComplete: true });
+          sendToGemini({ clientContent: { turns: [{ role: 'user', parts: [{ text: "Hello" }] }] }, turnComplete: true });
       }, 1000);
 
-      // הגדרת מיקרופון
+      // מיקרופון
       const stream = await navigator.mediaDevices.getUserMedia({ 
           audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true } 
       });
@@ -127,7 +123,6 @@ const App: React.FC = () => {
       const processor = ctx.createScriptProcessor(4096, 1, 1);
       processorRef.current = processor;
       
-      // חיבור שקט למניעת הד
       const zeroGain = ctx.createGain();
       zeroGain.gain.value = 0;
       source.connect(processor);
@@ -135,7 +130,7 @@ const App: React.FC = () => {
       zeroGain.connect(ctx.destination);
 
       processor.onaudioprocess = (e) => {
-        if (!activeSessionRef.current) return;
+        if (!activeSessionRef.current || isWaitingForResponseRef.current) return;
 
         const inputData = e.inputBuffer.getChannelData(0);
         
@@ -145,33 +140,42 @@ const App: React.FC = () => {
         const vol = Math.round(sum * 100);
         setMicVol(vol);
 
-        // VAD (זיהוי שתיקה)
-        if (vol > 5) { 
-            // זיהוי דיבור
+        // --- לוגיקת VAD (זיהוי שתיקה) ---
+        if (vol > 8) { 
+            // המשתמש מדבר
             lastVoiceTimeRef.current = Date.now();
-            silenceTriggeredRef.current = false;
-            if (!isUserTalking) setIsUserTalking(true);
+            if (!isUserTalking) {
+                setIsUserTalking(true);
+                setDebugLog("🎤 שומע דיבור...");
+            }
             
             // שליחת אודיו
             const downsampled = downsampleBuffer(inputData, ctx.sampleRate, 16000);
             const pcm16 = floatTo16BitPCM(downsampled);
-            safeSend({ realtimeInput: { mediaChunks: [{ data: pcm16, mimeType: 'audio/pcm;rate=16000' }] } });
+            sendToGemini({ realtimeInput: { mediaChunks: [{ data: pcm16, mimeType: 'audio/pcm;rate=16000' }] } });
 
-        } else if (isUserTalking && !silenceTriggeredRef.current) {
-            // זיהוי שקט
+        } else if (isUserTalking) {
+            // כרגע שקט, בודקים כמה זמן עבר
             const timeSinceVoice = Date.now() - lastVoiceTimeRef.current;
-            if (timeSinceVoice > 1200) { // 1.2 שניות שקט
-                console.log("Silence detected -> Turn Complete");
-                setDebugLog("שתיקה -> מבקש תשובה");
-                safeSend({ clientContent: { turns: [] }, turnComplete: true });
-                silenceTriggeredRef.current = true;
+            
+            if (timeSinceVoice > 1500) { // 1.5 שניות של שקט מוחלט
+                console.log("Silence -> Forcing Response");
+                setDebugLog("⏳ שתיקה -> שולח פקודת סיום!");
+                
+                // *** הטריק: שליחת הודעה ריקה + turnComplete ***
+                // זה מכריח את המודל להפסיק להקשיב ולענות
+                sendToGemini({ 
+                    clientContent: { turns: [{ role: 'user', parts: [{ text: "" }] }] }, 
+                    turnComplete: true 
+                });
+                
+                isWaitingForResponseRef.current = true; // מפסיק לשלוח אודיו עד שמקבל תשובה
                 setIsUserTalking(false);
             }
         }
       };
 
-      // *** לולאת האזנה חיצונית (במקום Callbacks) ***
-      // זו הדרך הבטוחה לעבוד עם הגרסה החדשה
+      // לולאת האזנה
       (async () => {
         try {
             for await (const msg of session.listen()) {
@@ -179,10 +183,10 @@ const App: React.FC = () => {
                 for (const part of parts) {
                     const audioData = part.inlineData?.data;
                     if (audioData) {
-                        setDebugLog("🔊 שומע תשובה...");
+                        setDebugLog("🔊 ה-AI עונה!");
                         setIsSpeaking(true);
+                        isWaitingForResponseRef.current = false; // אפשר לחזור להקשיב אח"כ
                         
-                        // ניגון אודיו
                         const binaryString = atob(audioData);
                         const len = binaryString.length;
                         const bytes = new Uint8Array(len);
@@ -201,7 +205,7 @@ const App: React.FC = () => {
                 }
             }
         } catch (e) {
-            console.log("Session loop ended", e);
+            console.log("Loop ended", e);
             setDebugLog("השיחה הסתיימה");
             stopConversation();
         }
@@ -221,9 +225,9 @@ const App: React.FC = () => {
             LOG: {debugLog}
         </div>
         <div className="flex items-center justify-center gap-2">
-            <Volume2 size={16} className={micVol > 5 ? "text-green-400" : "text-slate-600"} />
+            <Volume2 size={16} className={micVol > 8 ? "text-green-400" : "text-slate-600"} />
             <div className="w-32 h-2 bg-slate-700 rounded-full overflow-hidden">
-                <div className={`h-full transition-all duration-75 ${micVol > 5 ? 'bg-green-500' : 'bg-slate-500'}`} style={{ width: `${Math.min(micVol, 100)}%` }} />
+                <div className={`h-full transition-all duration-75 ${micVol > 8 ? 'bg-green-500' : 'bg-slate-500'}`} style={{ width: `${Math.min(micVol, 100)}%` }} />
             </div>
             <span className="text-xs text-slate-400">{micVol}</span>
         </div>
