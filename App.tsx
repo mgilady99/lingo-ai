@@ -1,249 +1,90 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { GoogleGenAI, Modality } from '@google/genai';
-import { Mic, AlertTriangle, CheckCircle, Square, Activity, Volume2 } from 'lucide-react';
-import Avatar from './components/Avatar';
-import AudioVisualizer from './components/AudioVisualizer';
+import { Square, Zap, Terminal } from 'lucide-react';
 
 const App: React.FC = () => {
-  const [status, setStatus] = useState<string>("disconnected");
-  const [isSpeaking, setIsSpeaking] = useState(false); // האם ה-AI מדבר
-  const [debugLog, setDebugLog] = useState<string>("מוכן"); 
-  const [micVol, setMicVol] = useState<number>(0);
-  const [isUserTalking, setIsUserTalking] = useState(false); // האם המשתמש מדבר כרגע
-
+  const [logs, setLogs] = useState<string[]>(["ממתין לפקודה..."]);
+  const [status, setStatus] = useState("idle");
   const activeSessionRef = useRef<any>(null);
-  const micStreamRef = useRef<MediaStream | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
-  
-  // משתנים לזיהוי שתיקה (Silence Detection)
-  const lastVoiceTimeRef = useRef<number>(0);
-  const silenceTimerRef = useRef<any>(null);
 
-  // --- פונקציות עזר לאודיו ---
-  const floatTo16BitPCM = (float32Array: Float32Array) => {
-    const buffer = new ArrayBuffer(float32Array.length * 2);
-    const view = new DataView(buffer);
-    for (let i = 0; i < float32Array.length; i++) {
-      let s = Math.max(-1, Math.min(1, float32Array[i]));
-      view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-    }
-    return btoa(String.fromCharCode(...new Uint8Array(buffer)));
-  };
+  const addLog = (msg: string) => setLogs(prev => [msg, ...prev]);
 
-  const downsampleBuffer = (buffer: Float32Array, inputRate: number, outputRate: number) => {
-    if (outputRate === inputRate) return buffer;
-    const sampleRateRatio = inputRate / outputRate;
-    const newLength = Math.round(buffer.length / sampleRateRatio);
-    const result = new Float32Array(newLength);
-    for (let i = 0; i < newLength; i++) {
-      const nextOffset = Math.round((i + 1) * sampleRateRatio);
-      const currOffset = Math.round(i * sampleRateRatio);
-      let accum = 0, count = 0;
-      for (let j = currOffset; j < nextOffset && j < buffer.length; j++) {
-        accum += buffer[j];
-        count++;
-      }
-      result[i] = count > 0 ? accum / count : 0;
-    }
-    return result;
-  };
-
-  // --- פונקציה חכמה לשליחת מידע (מונעת קריסות) ---
-  const sendToGemini = (data: any) => {
-      const session = activeSessionRef.current;
-      if (!session) return;
-
-      try {
-          // ניסיון ראשון: פקודת send הרגילה
-          if (typeof session.send === 'function') {
-              session.send(data);
-          } 
-          // ניסיון שני: אולי זה נקרא sendRealtimeInput?
-          else if (data.realtimeInput && typeof session.sendRealtimeInput === 'function') {
-              session.sendRealtimeInput(data.realtimeInput);
-          }
-          // ניסיון שלישי: אולי זה נקרא sendClientContent?
-          else if (data.clientContent && typeof session.sendClientContent === 'function') {
-              session.sendClientContent(data.clientContent);
-          }
-          else {
-              console.error("לא נמצאה פונקציית שליחה!", Object.keys(session));
-          }
-      } catch (e) {
-          console.error("שגיאה בשליחה:", e);
-      }
-  };
-
-  const stopConversation = useCallback(() => {
-    if (processorRef.current) { processorRef.current.disconnect(); processorRef.current = null; }
-    if (activeSessionRef.current) { try { activeSessionRef.current.close(); } catch (e) {} activeSessionRef.current = null; }
-    if (micStreamRef.current) { micStreamRef.current.getTracks().forEach(track => track.stop()); micStreamRef.current = null; }
-    if (audioContextRef.current) { audioContextRef.current.suspend(); }
-    
-    clearTimeout(silenceTimerRef.current);
-    setStatus("disconnected");
-    setIsSpeaking(false);
-    setIsUserTalking(false);
-    setMicVol(0);
-    setDebugLog("מנותק");
-  }, []);
-
-  const startConversation = async () => {
-    let apiKey = import.meta.env.VITE_API_KEY || "";
-    apiKey = apiKey.trim().replace(/['"]/g, '');
-    if (!apiKey) return alert("חסר API KEY");
+  const runDiagnostics = async () => {
+    const apiKey = import.meta.env.VITE_API_KEY;
+    if (!apiKey) return addLog("❌ שגיאה: חסר API KEY ב-Vercel");
 
     try {
-      stopConversation();
       setStatus("connecting");
-      setDebugLog("מתחבר...");
+      addLog("🔄 מנסה להתחבר לגוגל...");
 
-      const ctx = new AudioContext();
-      await ctx.resume();
-      audioContextRef.current = ctx;
-
-      const ai = new GoogleGenAI({ apiKey: apiKey });
+      const ai = new GoogleGenAI({ apiKey });
       const session = await ai.live.connect({
         model: "gemini-2.0-flash-exp",
-        config: { 
-          responseModalities: [Modality.AUDIO],
-          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } }
-        },
-        callbacks: { 
-            onopen: () => {
-              console.log("Connected");
-              setDebugLog("מחובר! דבר עכשיו...");
-              setStatus("connected");
-              
-              // שליחת Hello ראשוני להתנעה
-              setTimeout(() => {
-                  sendToGemini({ 
-                      clientContent: { turns: [{ role: 'user', parts: [{ text: "Hello" }] }] }, 
-                      turnComplete: true 
-                  });
-              }, 1000);
-            },
-            onclose: (e) => {
-                console.log("Closed:", e);
-                setDebugLog(`נותק (Code: ${e.code})`);
-                stopConversation();
-            },
-            onerror: (e) => console.error(e)
+        config: { responseModalities: [Modality.AUDIO] },
+        callbacks: {
+            onopen: () => addLog("✅ אירוע: חיבור נפתח (Open)"),
+            onclose: () => addLog("⚠️ אירוע: חיבור נסגר (Close)"),
+            onmessage: () => {},
+            onerror: (e) => addLog(`❌ שגיאה: ${e.message}`)
         }
       });
+
       activeSessionRef.current = session;
+      setStatus("connected");
+      addLog("✅ מחובר בהצלחה! בודק פונקציות...");
 
-      // מיקרופון
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, sampleRate: 16000 } });
-      micStreamRef.current = stream;
+      // בדיקת פונקציות קיימות באובייקט
+      const methods = [];
+      // בדיקה עמוקה באובייקט ובפרוטוטייפ שלו
+      let obj = session;
+      while (obj) {
+          for (const key of Object.getOwnPropertyNames(obj)) {
+              if (key !== 'constructor' && typeof (session as any)[key] === 'function') {
+                  if (!methods.includes(key)) methods.push(key);
+              }
+          }
+          obj = Object.getPrototypeOf(obj);
+          if (obj === Object.prototype) break;
+      }
 
-      const source = ctx.createMediaStreamSource(stream);
-      const processor = ctx.createScriptProcessor(4096, 1, 1);
-      processorRef.current = processor;
+      console.log("Full Session Object:", session);
+      console.log("Methods Found:", methods);
       
-      const zeroGain = ctx.createGain();
-      zeroGain.gain.value = 0;
-      source.connect(processor);
-      processor.connect(zeroGain);
-      zeroGain.connect(ctx.destination);
-
-      processor.onaudioprocess = (e) => {
-        if (!activeSessionRef.current) return;
-
-        const inputData = e.inputBuffer.getChannelData(0);
-        
-        // 1. חישוב ווליום
-        let sum = 0;
-        for(let i=0; i<inputData.length; i+=50) sum += Math.abs(inputData[i]);
-        const vol = Math.round(sum * 100);
-        setMicVol(vol);
-
-        // 2. זיהוי שתיקה (VAD)
-        if (vol > 10) { 
-            // המשתמש מדבר!
-            lastVoiceTimeRef.current = Date.now();
-            if (!isUserTalking) setIsUserTalking(true);
-            
-            // שולחים אודיו
-            const downsampled = downsampleBuffer(inputData, ctx.sampleRate, 16000);
-            const pcm16 = floatTo16BitPCM(downsampled);
-            sendToGemini({ realtimeInput: { mediaChunks: [{ data: pcm16, mimeType: 'audio/pcm;rate=16000' }] } });
-
-        } else if (isUserTalking) {
-            // המשתמש שותק כרגע... בודקים כמה זמן עבר
-            const silenceDuration = Date.now() - lastVoiceTimeRef.current;
-            
-            if (silenceDuration > 1500) { // 1.5 שניות של שקט
-                console.log("Silence detected - forcing answer!");
-                setDebugLog("שתיקה זוהתה - מבקש תשובה...");
-                
-                // *** הפקודה הקריטית: סיימתי לדבר, תענה לי! ***
-                sendToGemini({ clientContent: { turns: [] }, turnComplete: true });
-                
-                // איפוס מצב
-                setIsUserTalking(false); 
-            }
-        }
-      };
-
-      // האזנה לתשובות
-      (async () => {
-        if (!session.listen) return;
-        for await (const msg of session.listen()) {
-            const parts = msg.serverContent?.modelTurn?.parts || [];
-            for (const part of parts) {
-                const audioData = part.inlineData?.data;
-                if (audioData) {
-                    setDebugLog("🔊 ה-AI מדבר..."); 
-                    setIsSpeaking(true);
-                    
-                    const binaryString = atob(audioData);
-                    const len = binaryString.length;
-                    const bytes = new Uint8Array(len);
-                    for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
-                    const pcm16 = new Int16Array(bytes.buffer);
-                    const audioBuffer = ctx.createBuffer(1, pcm16.length, 24000);
-                    const channelData = audioBuffer.getChannelData(0);
-                    for (let i=0; i<pcm16.length; i++) channelData[i] = pcm16[i] / 32768.0;
-
-                    const sourceNode = ctx.createBufferSource();
-                    sourceNode.buffer = audioBuffer;
-                    sourceNode.connect(ctx.destination);
-                    sourceNode.onended = () => setIsSpeaking(false);
-                    sourceNode.start();
-                }
-            }
-        }
-      })();
+      addLog(`🔍 פונקציות שנמצאו: ${methods.join(", ") || "כלום"}`);
       
-    } catch (e: any) { stopConversation(); alert(e.message); }
+      // ניסיון לשלוח הודעה לפי מה שנמצא
+      if (methods.includes('send')) {
+          addLog("נמצאה פונקציית send - מנסה לשלוח...");
+          (session as any).send({ clientContent: { turns: [{ role: 'user', parts: [{ text: "Test" }] }] }, turnComplete: true });
+      } else if (methods.includes('sendClientContent')) {
+          addLog("נמצאה פונקציית sendClientContent - מנסה לשלוח...");
+      } else {
+          addLog("❌ לא נמצאה פונקציית שליחה מוכרת!");
+      }
+
+    } catch (e: any) {
+      addLog(`❌ קריסה קריטית: ${e.message}`);
+      setStatus("error");
+    }
   };
 
   return (
-    <div className="h-screen bg-slate-950 flex flex-col items-center justify-center text-white font-sans p-4">
-      <div className="absolute top-4 w-full max-w-md bg-slate-900/80 p-4 rounded-xl border border-white/10 text-center shadow-xl">
-        <div className="flex items-center justify-center gap-3 mb-2">
-            {status === "connected" ? <CheckCircle className="text-green-500" /> : <AlertTriangle className="text-amber-500" />}
-            <span className="font-bold uppercase text-sm">{status}</span>
-        </div>
-        <div className="bg-black/40 rounded px-2 py-1 text-xs font-mono text-cyan-300 mb-2">LOG: {debugLog}</div>
-        <div className="flex items-center justify-center gap-2">
-            <Volume2 size={16} className={micVol > 10 ? "text-green-400" : "text-slate-600"} />
-            <div className="w-32 h-2 bg-slate-700 rounded-full overflow-hidden">
-                <div className={`h-full transition-all duration-75 ${micVol > 10 ? 'bg-green-500' : 'bg-slate-500'}`} style={{ width: `${Math.min(micVol, 100)}%` }} />
-            </div>
-            <span className="text-xs text-gray-400">{micVol}</span>
-        </div>
+    <div className="h-screen bg-black text-green-400 font-mono p-6 flex flex-col gap-4" dir="ltr">
+      <h1 className="text-xl font-bold border-b border-green-800 pb-2">Gemini Diagnostic Tool</h1>
+      
+      <div className="flex gap-4">
+        <button onClick={runDiagnostics} className="bg-green-900 px-6 py-3 rounded flex items-center gap-2 hover:bg-green-800">
+          {status === 'connecting' ? <Zap className="animate-pulse" /> : <Terminal />} Run Test
+        </button>
+        <button onClick={() => activeSessionRef.current?.close()} className="bg-red-900 px-6 py-3 rounded flex items-center gap-2">
+          <Square size={18} /> Disconnect
+        </button>
       </div>
 
-      <div className="relative">
-        <Avatar state={status === "connected" ? (isSpeaking ? 'speaking' : (isUserTalking ? 'listening' : 'idle')) : 'idle'} />
-        <div className="absolute -bottom-24 left-1/2 -translate-x-1/2 w-full flex justify-center">
-            <button onClick={status === "connected" ? stopConversation : startConversation} className={`flex items-center gap-3 px-8 py-4 rounded-full font-bold text-xl shadow-2xl transition-all active:scale-95 ${status === "connected" ? 'bg-red-500 hover:bg-red-600' : 'bg-indigo-600 hover:bg-indigo-500'}`}>
-                {status === "connected" ? <><Square fill="currentColor" size={20} /> Stop</> : <><Mic size={24} /> Start</>}
-            </button>
-        </div>
+      <div className="flex-1 bg-gray-900 p-4 rounded border border-green-900 overflow-auto font-sans text-sm">
+        {logs.map((line, i) => (
+          <div key={i} className="mb-1 border-b border-gray-800 pb-1">{line}</div>
+        ))}
       </div>
     </div>
   );
