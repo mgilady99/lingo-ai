@@ -105,7 +105,9 @@ const App: React.FC = () => {
 
       const ai = new GoogleGenAI({ apiKey: apiKey });
       
-      // *** שינוי ארכיטקטורה: מעבר ל-Callbacks בלבד ***
+      // *** השינוי הקריטי: מעבר מלא ל-Callbacks ***
+      // הסרנו את session.listen() לחלוטין.
+      // כל הלוגיקה נמצאת כאן בתוך האובייקט callbacks
       const session = await ai.live.connect({
         model: "gemini-2.0-flash-exp",
         config: { 
@@ -118,7 +120,7 @@ const App: React.FC = () => {
                 setStatus("connected");
                 setDebugLog("מחובר! שולח 'שלום'...");
                 
-                // שליחת Hello ראשונית (Kickstart)
+                // Kickstart
                 setTimeout(() => {
                     if (activeSessionRef.current) {
                         activeSessionRef.current.sendClientContent({ 
@@ -128,8 +130,9 @@ const App: React.FC = () => {
                     }
                 }, 1000);
             },
-            // הפונקציה הזו מחליפה את ה-Loop ומונעת את הקריסה
             onMessage: (msg: any) => {
+                // כל הטיפול בתשובות קורה כאן
+                // זה מונע את השגיאה t is not a function
                 const parts = msg.serverContent?.modelTurn?.parts || [];
                 for (const part of parts) {
                     const audioData = part.inlineData?.data;
@@ -181,7 +184,7 @@ const App: React.FC = () => {
 
         // VAD (זיהוי שתיקה)
         if (vol > 8) { 
-            // מדברים
+            // המשתמש מדבר
             lastVoiceTimeRef.current = Date.now();
             if (!isUserTalking) setIsUserTalking(true);
             
@@ -200,12 +203,13 @@ const App: React.FC = () => {
                 console.log("Silence -> Force Reply");
                 setDebugLog("שתיקה -> מבקש תשובה...");
                 
-                // שליחת פקודת סיום בפורמט החדש
+                // שליחת פקודת סיום
                 activeSessionRef.current.sendClientContent({ 
                     turns: [], 
                     turnComplete: true 
                 });
                 
+                // חסימת המיקרופון עד לתשובה
                 isWaitingForResponseRef.current = true;
                 setIsUserTalking(false);
             }
@@ -257,11 +261,4 @@ const App: React.FC = () => {
       
       {(status === "connected") && (
          <div className="fixed bottom-0 w-full h-32 pointer-events-none opacity-50">
-            <AudioVisualizer isActive={true} color={isSpeaking ? "#a78bfa" : (isUserTalking ? "#34d399" : "#4b5563")} />
-         </div>
-      )}
-    </div>
-  );
-};
-
-export default App;
+            <AudioVisualizer isActive={true} color={isSpeaking ? "#a78bfa" : (isUserTalking ? "#34d399" : "#4b5563
