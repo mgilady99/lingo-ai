@@ -1,14 +1,17 @@
-import React from 'react';
+
+import React, { useEffect } from 'react';
 
 const App = () => {
+  // אישור בקונסול
+  useEffect(() => {
+    console.log("CRITICAL TEST - RED BAR VERSION ACTIVE");
+  }, []);
+
   const testSound = () => {
-    // מנסה להפעיל קול דרך מנוע הדיבור של הדפדפן
     const msg = new SpeechSynthesisUtterance();
-    msg.text = "The sound system is now active and working";
+    msg.text = "System test successful. Sound is working.";
     msg.lang = 'en-US';
-    
     window.speechSynthesis.speak(msg);
-    console.log("Audio command sent");
   };
 
   return (
@@ -16,23 +19,25 @@ const App = () => {
       height: '100vh', 
       display: 'flex', 
       flexDirection: 'column',
-      backgroundColor: '#000',
+      backgroundColor: '#050505',
       color: '#fff',
       margin: 0,
-      fontFamily: 'sans-serif'
+      fontFamily: 'system-ui, sans-serif'
     }}>
-      {/* פס זיהוי ירוק - אישור שהקוד חדש */}
+      {/* פס זיהוי אדום - אם אתה לא רואה אותו, הקוד לא התעדכן! */}
       <div style={{ 
         width: '100%', 
-        backgroundColor: '#22c55e', 
-        color: '#000', 
-        padding: '15px', 
+        backgroundColor: '#ff0000', 
+        color: '#fff', 
+        padding: '20px', 
         textAlign: 'center',
-        fontWeight: 'bold',
-        fontSize: '1.2rem',
-        boxShadow: '0 4px 15px rgba(34, 197, 94, 0.4)'
+        fontWeight: '900',
+        fontSize: '1.5rem',
+        textTransform: 'uppercase',
+        boxShadow: '0 0 20px rgba(255, 0, 0, 0.6)',
+        zIndex: 1000
       }}>
-        ✅ NEW CODE ACTIVE - V6
+        🚨 WARNING: TESTING NEW CODE - RED BAR ACTIVE 🚨
       </div>
 
       <div style={{ 
@@ -41,46 +46,28 @@ const App = () => {
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: '30px',
-        padding: '20px'
+        gap: '40px'
       }}>
-        <h1 style={{ fontSize: '2.5rem', textAlign: 'center' }}>Audio Diagnostic</h1>
+        <h1 style={{ fontSize: '3rem', margin: 0 }}>Audio Test</h1>
         
         <button 
           onClick={testSound}
           style={{
-            padding: '25px 50px',
-            fontSize: '1.8rem',
+            padding: '30px 60px',
+            fontSize: '2rem',
             fontWeight: 'bold',
             cursor: 'pointer',
-            backgroundColor: '#3b82f6',
-            color: 'white',
+            backgroundColor: '#ffffff',
+            color: '#000',
             border: 'none',
-            borderRadius: '50px',
-            boxShadow: '0 0 30px rgba(59, 130, 246, 0.5)',
-            transition: 'transform 0.1s'
+            borderRadius: '10px',
+            boxShadow: '0 10px 30px rgba(255,255,255,0.2)'
           }}
-          onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.95)'}
-          onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
         >
           🔊 לחץ לבדיקת קול
         </button>
 
-        <div style={{ 
-          maxWidth: '400px', 
-          backgroundColor: '#111', 
-          padding: '20px', 
-          borderRadius: '15px',
-          border: '1px solid #333',
-          lineHeight: '1.6'
-        }}>
-          <p style={{ margin: 0, color: '#aaa' }}>
-            <strong>אם לא שמעת כלום:</strong><br />
-            1. בדוק שהרמקולים דלוקים.<br />
-            2. בדוק שלשונית הדפדפן לא במצב Mute (קליק ימני על הלשונית למעלה).<br />
-            3. וודא שעוצמת הקול במערכת ההפעלה מעל 0.
-          </p>
-        </div>
+        <p style={{ color: '#666' }}>גרסה: 1.0.7</p>
       </div>
     </div>
   );
