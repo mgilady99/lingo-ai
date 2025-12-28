@@ -19,7 +19,7 @@ const App: React.FC = () => {
   const lastVoiceTimeRef = useRef<number>(0);
   const silenceTriggeredRef = useRef<boolean>(false);
 
-  // --- עזרי אודיו (חייב להישאר כדי לתמוך ב-16kHz) ---
+  // --- עזרי אודיו (חובה להמרה ל-16kHz) ---
   const floatTo16BitPCM = (float32Array: Float32Array) => {
     const buffer = new ArrayBuffer(float32Array.length * 2);
     const view = new DataView(buffer);
@@ -48,7 +48,7 @@ const App: React.FC = () => {
     return result;
   };
 
-  // --- שליחה בטוחה ---
+  // --- שליחה בטוחה (מנסה את כל הווריאציות כדי לא לקרוס) ---
   const safeSend = (data: any) => {
       const s = activeSessionRef.current;
       if (!s) return;
@@ -61,7 +61,7 @@ const App: React.FC = () => {
               s.send(data);
           }
       } catch (e) { 
-          // התעלמות משגיאות שליחה רגעיות
+          // התעלמות משגיאות רגעיות כדי לא לעצור את הזרימה
       }
   };
 
@@ -97,7 +97,8 @@ const App: React.FC = () => {
 
       const ai = new GoogleGenAI({ apiKey: apiKey });
       
-      // *** השינוי הגדול: הסרנו את ה-CALLBACKS שגורמים לקריסה ***
+      // *** התיקון הקריטי: חיבור ללא Callbacks ***
+      // זה מונע את השגיאה TypeError: t is not a function בתוך הספרייה
       const session = await ai.live.connect({
         model: "gemini-2.0-flash-exp",
         config: { 
@@ -110,13 +111,13 @@ const App: React.FC = () => {
       setStatus("connected");
       setDebugLog("מחובר! (מתניע...)");
 
-      // Kickstart - שליחת הודעה ראשונה
+      // שליחת Hello ראשוני (Kickstart)
       setTimeout(() => {
-          console.log("Sending Hello...");
+          console.log("Sending Kickstart...");
           safeSend({ clientContent: { turns: [{ role: 'user', parts: [{ text: "Hello" }] }] }, turnComplete: true });
       }, 1000);
 
-      // מיקרופון
+      // הגדרת מיקרופון
       const stream = await navigator.mediaDevices.getUserMedia({ 
           audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true } 
       });
@@ -126,6 +127,7 @@ const App: React.FC = () => {
       const processor = ctx.createScriptProcessor(4096, 1, 1);
       processorRef.current = processor;
       
+      // חיבור שקט למניעת הד
       const zeroGain = ctx.createGain();
       zeroGain.gain.value = 0;
       source.connect(processor);
@@ -145,7 +147,7 @@ const App: React.FC = () => {
 
         // VAD (זיהוי שתיקה)
         if (vol > 5) { 
-            // מדברים
+            // זיהוי דיבור
             lastVoiceTimeRef.current = Date.now();
             silenceTriggeredRef.current = false;
             if (!isUserTalking) setIsUserTalking(true);
@@ -156,7 +158,7 @@ const App: React.FC = () => {
             safeSend({ realtimeInput: { mediaChunks: [{ data: pcm16, mimeType: 'audio/pcm;rate=16000' }] } });
 
         } else if (isUserTalking && !silenceTriggeredRef.current) {
-            // שקט... בודקים כמה זמן
+            // זיהוי שקט
             const timeSinceVoice = Date.now() - lastVoiceTimeRef.current;
             if (timeSinceVoice > 1200) { // 1.2 שניות שקט
                 console.log("Silence detected -> Turn Complete");
@@ -168,7 +170,8 @@ const App: React.FC = () => {
         }
       };
 
-      // *** לולאת האזנה (במקום Callbacks) - זה מה שמונע את הקריסה ***
+      // *** לולאת האזנה חיצונית (במקום Callbacks) ***
+      // זו הדרך הבטוחה לעבוד עם הגרסה החדשה
       (async () => {
         try {
             for await (const msg of session.listen()) {
@@ -179,7 +182,7 @@ const App: React.FC = () => {
                         setDebugLog("🔊 שומע תשובה...");
                         setIsSpeaking(true);
                         
-                        // ניגון
+                        // ניגון אודיו
                         const binaryString = atob(audioData);
                         const len = binaryString.length;
                         const bytes = new Uint8Array(len);
@@ -198,7 +201,7 @@ const App: React.FC = () => {
                 }
             }
         } catch (e) {
-            console.log("Session ended", e);
+            console.log("Session loop ended", e);
             setDebugLog("השיחה הסתיימה");
             stopConversation();
         }
