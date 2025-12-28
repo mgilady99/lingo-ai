@@ -16,7 +16,7 @@ const App: React.FC = () => {
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const nextStartTimeRef = useRef(0);
 
-  // --- המרת נתונים ---
+  // --- עזרי אודיו ---
   const floatTo16BitPCM = (float32Array: Float32Array) => {
     const buffer = new ArrayBuffer(float32Array.length * 2);
     const view = new DataView(buffer);
@@ -45,32 +45,25 @@ const App: React.FC = () => {
     return result;
   };
 
-  // --- ניתוק מסודר ---
+  // --- ניתוק ---
   const stopConversation = useCallback(() => {
     console.log("Stopping...");
-    
-    // ניתוק המעבד קודם כל למניעת קריסה
     if (processorRef.current) {
         processorRef.current.disconnect();
         processorRef.current.onaudioprocess = null;
         processorRef.current = null;
     }
-
     if (activeSessionRef.current) { 
         try { activeSessionRef.current.close(); } catch (e) {} 
         activeSessionRef.current = null; 
     }
-
     if (micStreamRef.current) { 
         micStreamRef.current.getTracks().forEach(track => track.stop()); 
         micStreamRef.current = null; 
     }
-
-    // לא סוגרים את ה-AudioContext כדי שאפשר יהיה להשתמש בו שוב
     if (audioContextRef.current) {
         audioContextRef.current.suspend();
     }
-
     setStatus("disconnected");
     setIsSpeaking(false);
     setMicVol(0);
@@ -83,11 +76,11 @@ const App: React.FC = () => {
     if (!apiKey) return alert("חסר API KEY");
 
     try {
-      stopConversation(); // איפוס
+      stopConversation();
       setStatus("connecting");
       setDebugLog("מתחבר...");
 
-      // 1. אתחול אודיו
+      // 1. אתחול AudioContext
       let ctx = audioContextRef.current;
       if (!ctx) {
           ctx = new AudioContext();
@@ -95,46 +88,55 @@ const App: React.FC = () => {
       }
       await ctx.resume();
 
-      // 2. חיבור ל-Gemini
+      // 2. חיבור ל-Gemini (עם speechConfig!)
       const ai = new GoogleGenAI({ apiKey: apiKey });
       const session = await ai.live.connect({
         model: "gemini-2.0-flash-exp",
         config: { 
-          systemInstruction: { parts: [{ text: "You are a friendly assistant. Keep answers short." }] },
+          systemInstruction: { parts: [{ text: "You are a helpful English tutor. Keep answers short." }] },
           responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: {
+                voiceName: "Kore" // הגדרת קול חובה
+              }
+            }
+          }
         },
         callbacks: { 
             onopen: () => {
               console.log("Connected");
-              setDebugLog("מחובר! אמור שלום...");
+              setDebugLog("מחובר! שולח 'שלום'...");
               setStatus("connected");
               
-              // שליחת סיגנל ראשוני
+              // Kickstart בטוח
               setTimeout(() => {
                  if (activeSessionRef.current) {
-                     activeSessionRef.current.send({
-                         clientContent: { turns: [{ role: 'user', parts: [{ text: "Hello" }] }] }, 
-                         turnComplete: true 
-                     });
+                     try {
+                        activeSessionRef.current.send({
+                             clientContent: { turns: [{ role: 'user', parts: [{ text: "Hello!" }] }] }, 
+                             turnComplete: true 
+                        });
+                     } catch(e) { console.log("Kickstart skipped"); }
                  }
               }, 500);
             },
             onmessage: () => {}, 
             onerror: (e) => {
-                console.error("Server Error:", e);
+                console.error("Error:", e);
                 setDebugLog("שגיאה מהשרת");
                 stopConversation();
             }, 
             onclose: (e) => {
                 console.log("Closed:", e);
-                setDebugLog("השיחה נותקה ע״י השרת");
+                setDebugLog("השיחה נותקה");
                 stopConversation();
             }
         }
       });
       activeSessionRef.current = session;
 
-      // 3. מיקרופון
+      // 3. מיקרופון (ללא השמעה עצמית!)
       const stream = await navigator.mediaDevices.getUserMedia({ 
           audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true } 
       });
@@ -143,70 +145,73 @@ const App: React.FC = () => {
       const source = ctx.createMediaStreamSource(stream);
       const processor = ctx.createScriptProcessor(4096, 1, 1);
       processorRef.current = processor;
+      
+      // יצירת ערוץ "שקט" כדי למנוע הד (Feedback Loop)
+      const zeroGain = ctx.createGain();
+      zeroGain.gain.value = 0;
+
+      source.connect(processor);
+      processor.connect(zeroGain);
+      zeroGain.connect(ctx.destination); // חיבור חובה כדי שה-Processor יעבוד
 
       processor.onaudioprocess = (e) => {
-        // הגנה מפני קריסה: אם אין סשן, לא עושים כלום
         if (!activeSessionRef.current) return;
 
         const inputData = e.inputBuffer.getChannelData(0);
         
-        // חישוב ווליום
+        // ווליום
         let sum = 0;
         for(let i=0; i<inputData.length; i+=50) sum += Math.abs(inputData[i]);
-        const vol = Math.round(sum * 100);
-        setMicVol(vol);
+        setMicVol(Math.round(sum * 100));
 
-        // שליחה רק אם הווליום מעל 0 (מונע שליחת שקט שמנתק את השרת)
-        if (vol > 0) {
-            try {
-              const downsampled = downsampleBuffer(inputData, ctx.sampleRate, 16000);
-              const pcm16 = floatTo16BitPCM(downsampled);
-              activeSessionRef.current.send({ 
-                realtimeInput: { 
-                  mediaChunks: [{ data: pcm16, mimeType: 'audio/pcm;rate=16000' }] 
-                } 
-              });
-            } catch(err) {
-                // התעלמות משגיאות שליחה בודדות
-            }
-        }
+        try {
+           const downsampled = downsampleBuffer(inputData, ctx.sampleRate, 16000);
+           const pcm16 = floatTo16BitPCM(downsampled);
+           
+           activeSessionRef.current.send({ 
+             realtimeInput: { 
+               mediaChunks: [{ data: pcm16, mimeType: 'audio/pcm;rate=16000' }] 
+             } 
+           });
+        } catch(err) {}
       };
-      
-      source.connect(processor);
-      processor.connect(ctx.destination);
 
-      // 4. קבלת תשובות (Playback)
+      // 4. לולאת האזנה משופרת (קוראת את כל החלקים)
       (async () => {
         try {
           if (!session.listen) return;
           for await (const msg of session.listen()) {
-            if (msg.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data) {
-              setDebugLog("🔊 מנגן סאונד..."); 
-              setIsSpeaking(true);
-              
-              const audioData = msg.serverContent.modelTurn.parts[0].inlineData.data;
-              const binaryString = atob(audioData);
-              const len = binaryString.length;
-              const bytes = new Uint8Array(len);
-              for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
-              
-              const pcm16 = new Int16Array(bytes.buffer);
-              const audioBuffer = ctx.createBuffer(1, pcm16.length, 24000);
-              const channelData = audioBuffer.getChannelData(0);
-              for (let i=0; i<pcm16.length; i++) channelData[i] = pcm16[i] / 32768.0;
+            const parts = msg.serverContent?.modelTurn?.parts || [];
+            
+            for (const part of parts) {
+                const audioData = part.inlineData?.data;
+                if (audioData) {
+                    setDebugLog("🔊 אודיו התקבל!"); 
+                    setIsSpeaking(true);
+                    
+                    const binaryString = atob(audioData);
+                    const len = binaryString.length;
+                    const bytes = new Uint8Array(len);
+                    for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
+                    
+                    const pcm16 = new Int16Array(bytes.buffer);
+                    const audioBuffer = ctx.createBuffer(1, pcm16.length, 24000);
+                    const channelData = audioBuffer.getChannelData(0);
+                    for (let i=0; i<pcm16.length; i++) channelData[i] = pcm16[i] / 32768.0;
 
-              const sourceNode = ctx.createBufferSource();
-              sourceNode.buffer = audioBuffer;
-              sourceNode.connect(ctx.destination);
-              sourceNode.onended = () => setIsSpeaking(false);
-              
-              const now = ctx.currentTime;
-              const start = Math.max(nextStartTimeRef.current, now);
-              sourceNode.start(start);
-              nextStartTimeRef.current = start + audioBuffer.duration;
+                    const sourceNode = ctx.createBufferSource();
+                    sourceNode.buffer = audioBuffer;
+                    sourceNode.connect(ctx.destination);
+                    sourceNode.onended = () => setIsSpeaking(false);
+                    
+                    const now = ctx.currentTime;
+                    const start = Math.max(nextStartTimeRef.current, now);
+                    sourceNode.start(start);
+                    nextStartTimeRef.current = start + audioBuffer.duration;
+                }
             }
           }
-        } catch(e) { console.error(e); }
+        } catch(e) { console.error("Listen Error:", e); }
       })();
       
     } catch (e: any) { stopConversation(); alert(e.message); }
@@ -246,7 +251,7 @@ const App: React.FC = () => {
                 {status === "connected" ? (
                     <> <Square fill="currentColor" size={20} /> Stop </>
                 ) : (
-                    <> <Mic size={24} /> Start Conversation </>
+                    <> <Mic size={24} /> Start </>
                 )}
             </button>
         </div>
