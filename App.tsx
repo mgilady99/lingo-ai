@@ -1,13 +1,13 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenAI, Modality } from '@google/genai';
-import { Mic, Headphones, AlertTriangle, CheckCircle, Square, Activity, Zap } from 'lucide-react';
+import { Mic, Headphones, AlertTriangle, CheckCircle, Square, Activity, Volume2 } from 'lucide-react';
 import Avatar from './components/Avatar';
 import AudioVisualizer from './components/AudioVisualizer';
 
 const App: React.FC = () => {
   const [status, setStatus] = useState<string>("disconnected");
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [debugLog, setDebugLog] = useState<string>("מוכן לבדיקה"); 
+  const [debugLog, setDebugLog] = useState<string>("מוכן"); 
   const [micVol, setMicVol] = useState<number>(0);
 
   const activeSessionRef = useRef<any>(null);
@@ -16,7 +16,7 @@ const App: React.FC = () => {
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const nextStartTimeRef = useRef(0);
 
-  // --- המרת אודיו (חובה) ---
+  // --- עזרי אודיו ---
   const floatTo16BitPCM = (float32Array: Float32Array) => {
     const buffer = new ArrayBuffer(float32Array.length * 2);
     const view = new DataView(buffer);
@@ -61,14 +61,13 @@ const App: React.FC = () => {
         micStreamRef.current.getTracks().forEach(track => track.stop()); 
         micStreamRef.current = null; 
     }
-    // לא סוגרים את ה-Context כדי לא לשבור הפעלות חוזרות
-    if (audioContextRef.current && audioContextRef.current.state === 'running') {
+    if (audioContextRef.current) {
         audioContextRef.current.suspend();
     }
-    
     setStatus("disconnected");
     setIsSpeaking(false);
     setMicVol(0);
+    setDebugLog("מנותק");
   }, []);
 
   const startConversation = async () => {
@@ -79,9 +78,9 @@ const App: React.FC = () => {
     try {
       stopConversation();
       setStatus("connecting");
-      setDebugLog("מתחבר (בלי הגדרות)...");
+      setDebugLog("מתחבר...");
 
-      // 1. אודיו
+      // 1. אתחול AudioContext
       let ctx = audioContextRef.current;
       if (!ctx) {
           ctx = new AudioContext();
@@ -89,105 +88,124 @@ const App: React.FC = () => {
       }
       await ctx.resume();
 
-      // 2. חיבור ל-Gemini (הכי בסיסי שאפשר)
+      // 2. חיבור ל-Gemini
       const ai = new GoogleGenAI({ apiKey: apiKey });
       const session = await ai.live.connect({
         model: "gemini-2.0-flash-exp",
         config: { 
-          // הסרתי הכל חוץ מזה. אם זה לא עובד - המודל חסום.
           responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } }
+          }
         },
         callbacks: { 
             onopen: () => {
               console.log("Connected");
-              setDebugLog("מחובר! ממתין 2 שניות...");
+              setDebugLog("מחובר! מבצע התנעה...");
               setStatus("connected");
               
-              // שליחת טקסט ראשוני להתנעה
+              // *** התיקון שלך: שימוש ב-sendClientContent ***
               setTimeout(() => {
-                  if(activeSessionRef.current) {
-                      setDebugLog("שולח 'Hello'...");
-                      activeSessionRef.current.send({ 
-                          clientContent: { turns: [{ role: 'user', parts: [{ text: "Hello" }] }] }, 
-                          turnComplete: true 
-                      });
-                  }
-              }, 1500);
+                 const s = activeSessionRef.current;
+                 if (s) {
+                     console.log("Sending Hello...");
+                     // בדיקה אם הפונקציה קיימת לפני קריאה (ליתר ביטחון)
+                     if (typeof s.sendClientContent === 'function') {
+                         s.sendClientContent({
+                             turns: [{ role: 'user', parts: [{ text: "Hello, can you hear me?" }] }],
+                             turnComplete: true
+                         });
+                     } else {
+                         // Fallback למקרה שזה גרסה אחרת
+                         console.warn("sendClientContent missing, trying .send");
+                         s.send({
+                             clientContent: { turns: [{ role: 'user', parts: [{ text: "Hello" }] }] },
+                             turnComplete: true
+                         });
+                     }
+                 }
+              }, 500);
             },
-            onmessage: () => {}, // חייב להיות מוגדר
+            onmessage: () => {}, 
             onerror: (e) => {
                 console.error("Error:", e);
                 setDebugLog("שגיאה: " + e.message);
             }, 
             onclose: (e) => {
                 console.log("Closed:", e);
-                // הדפסת סיבת הניתוק המדויקת למסך
-                setDebugLog(`נותק (Code: ${e.code}, Reason: ${e.reason || 'None'})`);
+                setDebugLog(`נותק (Code: ${e.code})`);
                 stopConversation();
             }
         }
       });
       activeSessionRef.current = session;
 
-      // 3. מיקרופון (נדחה את ההפעלה שלו ב-2 שניות כדי לא להפיל את החיבור על ההתחלה)
-      setTimeout(async () => {
-          if (status === 'disconnected') return; // אם כבר נותק, לא להפעיל מיקרופון
+      // 3. מיקרופון + מניעת ECHO
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+          audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true } 
+      });
+      micStreamRef.current = stream;
 
-          try {
-              const stream = await navigator.mediaDevices.getUserMedia({ 
-                  audio: { channelCount: 1, sampleRate: 16000 } 
-              });
-              micStreamRef.current = stream;
+      const source = ctx.createMediaStreamSource(stream);
+      const processor = ctx.createScriptProcessor(4096, 1, 1);
+      processorRef.current = processor;
+      
+      // *** התיקון שלך: Zero Gain למניעת פידבק ***
+      const zeroGain = ctx.createGain();
+      zeroGain.gain.value = 0;
 
-              const source = ctx.createMediaStreamSource(stream);
-              const processor = ctx.createScriptProcessor(4096, 1, 1);
-              processorRef.current = processor;
-              
-              const zeroGain = ctx.createGain();
-              zeroGain.gain.value = 0;
+      source.connect(processor);
+      processor.connect(zeroGain);
+      zeroGain.connect(ctx.destination); // חיבור "שקט" כדי להפעיל את הפרוססור
 
-              source.connect(processor);
-              processor.connect(zeroGain);
-              zeroGain.connect(ctx.destination);
+      processor.onaudioprocess = (e) => {
+        const s = activeSessionRef.current;
+        if (!s) return;
 
-              processor.onaudioprocess = (e) => {
-                if (!activeSessionRef.current) return;
+        const inputData = e.inputBuffer.getChannelData(0);
+        
+        // ווליום
+        let sum = 0;
+        for(let i=0; i<inputData.length; i+=50) sum += Math.abs(inputData[i]);
+        const vol = Math.round(sum * 100);
+        setMicVol(vol);
 
-                const inputData = e.inputBuffer.getChannelData(0);
-                
-                // ווליום
-                let sum = 0;
-                for(let i=0; i<inputData.length; i+=50) sum += Math.abs(inputData[i]);
-                setMicVol(Math.round(sum * 100));
-
-                try {
-                   const downsampled = downsampleBuffer(inputData, ctx.sampleRate, 16000);
-                   const pcm16 = floatTo16BitPCM(downsampled);
-                   
-                   activeSessionRef.current.send({ 
-                     realtimeInput: { 
-                       mediaChunks: [{ data: pcm16, mimeType: 'audio/pcm;rate=16000' }] 
-                     } 
+        // שליחה רק אם יש ווליום
+        if (vol > 0) {
+            try {
+               const downsampled = downsampleBuffer(inputData, ctx.sampleRate, 16000);
+               const pcm16 = floatTo16BitPCM(downsampled);
+               
+               // *** התיקון שלך: שימוש ב-sendRealtimeInput ***
+               if (typeof s.sendRealtimeInput === 'function') {
+                   s.sendRealtimeInput({
+                       mediaChunks: [{ data: pcm16, mimeType: 'audio/pcm;rate=16000' }]
                    });
-                } catch(err) {
-                    // להתעלם משגיאות שליחה
-                }
-              };
-          } catch (err) {
-              console.error("Mic Error", err);
-          }
-      }, 2000); // הפעלה מושהית של המיקרופון
+               } else {
+                   // Fallback
+                   s.send({
+                       realtimeInput: {
+                           mediaChunks: [{ data: pcm16, mimeType: 'audio/pcm;rate=16000' }]
+                       }
+                   });
+               }
+            } catch(err) {
+                // שגיאות בודדות לא מעניינות
+            }
+        }
+      };
 
-      // 4. נגן אודיו
+      // 4. לולאת האזנה (Playback)
       (async () => {
         try {
           if (!session.listen) return;
           for await (const msg of session.listen()) {
             const parts = msg.serverContent?.modelTurn?.parts || [];
+            
             for (const part of parts) {
                 const audioData = part.inlineData?.data;
                 if (audioData) {
-                    setDebugLog("🔊 התקבל אודיו!"); 
+                    setDebugLog("🔊 אודיו התקבל!"); 
                     setIsSpeaking(true);
                     
                     const binaryString = atob(audioData);
@@ -208,7 +226,7 @@ const App: React.FC = () => {
                 }
             }
           }
-        } catch(e) { console.error("Listen Loop:", e); }
+        } catch(e) { console.error("Listen Error:", e); }
       })();
       
     } catch (e: any) { stopConversation(); alert(e.message); }
@@ -216,6 +234,7 @@ const App: React.FC = () => {
 
   return (
     <div className="h-screen bg-slate-950 flex flex-col items-center justify-center text-white font-sans p-4">
+      {/* לוג ומצב */}
       <div className="absolute top-4 w-full max-w-md bg-slate-900/80 p-4 rounded-xl border border-white/10 text-center shadow-xl backdrop-blur-md">
         <div className="flex items-center justify-center gap-3 mb-2">
             {status === "connected" ? <CheckCircle className="text-green-500" /> : <AlertTriangle className="text-amber-500" />}
@@ -247,12 +266,12 @@ const App: React.FC = () => {
                 {status === "connected" ? (
                     <> <Square fill="currentColor" size={20} /> Stop </>
                 ) : (
-                    <> <Mic size={24} /> Test Audio </>
+                    <> <Mic size={24} /> Start </>
                 )}
             </button>
         </div>
       </div>
-      
+
       {(status === "connected") && (
          <div className="fixed bottom-0 w-full h-32 pointer-events-none opacity-50">
             <AudioVisualizer isActive={true} color={isSpeaking ? "#a78bfa" : "#34d399"} />
