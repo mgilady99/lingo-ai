@@ -1,23 +1,13 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 
-const App: React.FC = () => {
-  useEffect(() => { console.log("SYSTEM V13 ONLINE"); }, []);
-
-  const testAudio = () => {
-    const speech = new SpeechSynthesisUtterance("System connected successfully");
-    window.speechSynthesis.speak(speech);
-  };
-
+const App = () => {
   return (
-    <div className="h-screen flex flex-col bg-black text-white">
-      <div className="w-full bg-yellow-400 text-black py-8 text-center font-black text-3xl">
-        ⚠️ V13 - YELLOW BAR ACTIVE ⚠️
+    <div style={{ height: '100vh', backgroundColor: '#000', color: '#fff', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ backgroundColor: '#facc15', color: '#000', padding: '20px', textAlign: 'center', fontWeight: 'bold', fontSize: '1.5rem' }}>
+        ⚠️ V14 - BUILD SUCCESSFUL (YELLOW BAR) ⚠️
       </div>
-      <div className="flex-1 flex flex-col items-center justify-center gap-10">
-        <button onClick={testAudio} className="bg-blue-600 px-12 py-6 rounded-2xl text-2xl font-bold">
-          🔊 לחץ לבדיקת קול
-        </button>
-        <p className="text-xl">אם אתה רואה צהוב ושומע קול - הצלחנו</p>
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <h1 style={{ fontSize: '2rem' }}>המערכת מחוברת!</h1>
       </div>
     </div>
   );
