@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenAI, Modality } from '@google/genai';
-import { Mic, Headphones, ArrowLeftRight } from 'lucide-react';
+import { Mic, Headphones, ArrowLeftRight, AlertTriangle, CheckCircle } from 'lucide-react';
 import { ConnectionStatus, SUPPORTED_LANGUAGES, SCENARIOS, Language, PracticeScenario } from './types';
 import { decode, decodeAudioData, createPcmBlob } from './services/audioService';
 import Avatar from './components/Avatar';
@@ -13,7 +13,10 @@ const App: React.FC = () => {
   const [nativeLang, setNativeLang] = useState<Language>(SUPPORTED_LANGUAGES[1]);
   const [selectedScenario, setSelectedScenario] = useState<PracticeScenario>(SCENARIOS[0]);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [keyStatus, setKeyStatus] = useState<string>("BODEK..."); // בדיקה
+  
+  // משתני בדיקה לדיבאג
+  const [keyStatus, setKeyStatus] = useState<string>("טוען...");
+  const [keyColor, setKeyColor] = useState<string>("bg-gray-500");
 
   const activeSessionRef = useRef<any>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
@@ -21,13 +24,19 @@ const App: React.FC = () => {
   const outputAudioContextRef = useRef<AudioContext | null>(null);
   const nextStartTimeRef = useRef(0);
 
-  // בדיקה האם המפתח נטען
+  // בדיקה קריטית בעלייה
   useEffect(() => {
+    // Vite מחייב שהמשתנה יתחיל ב-VITE_
     const key = import.meta.env.VITE_API_KEY;
-    if (key && key.length > 10) {
-      setKeyStatus("KEY LOADED ✅");
+    
+    console.log("Environment check:", key ? "Key exists" : "Key missing");
+
+    if (key && key.length > 20) {
+      setKeyStatus("המפתח זוהה בהצלחה ✅");
+      setKeyColor("bg-green-600");
     } else {
-      setKeyStatus("KEY MISSING ❌");
+      setKeyStatus("שגיאה: משתנה VITE_API_KEY חסר בהגדרות Vercel");
+      setKeyColor("bg-red-600");
     }
   }, []);
 
@@ -42,11 +51,11 @@ const App: React.FC = () => {
   }, []);
 
   const startConversation = async () => {
-    // שליפת המפתח
+    // שליפה נכונה לפי התקן של Vite
     const apiKey = import.meta.env.VITE_API_KEY;
 
     if (!apiKey) {
-      alert("שגיאה: האתר לא מוצא את המפתח בהגדרות Vercel. וודא ששם המשתנה הוא VITE_API_KEY");
+      alert("שגיאה קריטית: המפתח חסר. וודא שב-Vercel המשתנה נקרא VITE_API_KEY");
       return;
     }
 
@@ -73,7 +82,12 @@ const App: React.FC = () => {
         callbacks: { 
             onopen: () => console.log("Connected"), 
             onmessage: () => {}, 
-            onerror: (e) => console.error("Error:", e), 
+            onerror: (e) => {
+                console.error("Error:", e);
+                // הודעה מיוחדת למקרה של חסימת גישה
+                alert("המפתח זוהה אך החיבור נכשל. וודא ש-'Generative Language API' מופעל בפרויקט Firebase.");
+                stopConversation();
+            }, 
             onclose: () => console.log("Closed") 
         }
       });
@@ -115,8 +129,10 @@ const App: React.FC = () => {
 
   return (
     <div className={`h-screen bg-slate-950 flex flex-col text-slate-200 overflow-hidden font-['Inter'] ${dir}`} dir={dir}>
-      {/* דיבאג - מציג סטטוס מפתח */}
-      <div className="absolute top-0 left-0 bg-white text-black text-xs p-1 font-bold z-50">
+      
+      {/* סרגל בדיקה - חובה להשאיר אותו עד שהבעיה נפתרת */}
+      <div className={`w-full ${keyColor} text-white font-bold p-3 text-center text-lg flex items-center justify-center gap-2 z-50 shadow-lg`}>
+        {keyColor.includes('green') ? <CheckCircle size={24} /> : <AlertTriangle size={24} />}
         STATUS: {keyStatus}
       </div>
 
