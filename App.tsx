@@ -1,7 +1,6 @@
-
-import React, { useState, useRef, useCallback } from 'react';
-import { GoogleGenAI, Modality } from '@google/genai';
-import { Mic, AlertTriangle, CheckCircle, Square, Volume2 } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { GoogleGenAI } from '@google/genai';
+import { Mic, AlertTriangle, CheckCircle, Square, Volume2, Send } from 'lucide-react';
 import Avatar from './components/Avatar';
 import AudioVisualizer from './components/AudioVisualizer';
 
@@ -12,15 +11,46 @@ const App: React.FC = () => {
   const [debugLog, setDebugLog] = useState<string>("מוכן"); 
   const [micVol, setMicVol] = useState<number>(0);
 
-  const activeSessionRef = useRef<any>(null);
-  const micStreamRef = useRef<MediaStream | null>(null);
+  // Ref-ים לניהול מצב ללא רינדור מחדש
+  const sessionRef = useRef<any>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
-  
   const lastVoiceTimeRef = useRef<number>(0);
   const isWaitingForResponseRef = useRef<boolean>(false);
 
-  // --- עזרי אודיו ---
+  // פונקציית ניקוי (חשובה מאוד למניעת קריסות)
+  const cleanupAudio = useCallback(() => {
+    if (processorRef.current) {
+        processorRef.current.disconnect();
+        processorRef.current = null;
+    }
+    if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+    }
+    if (audioContextRef.current) {
+        audioContextRef.current.close();
+        audioContextRef.current = null;
+    }
+  }, []);
+
+  const disconnect = useCallback(async () => {
+    cleanupAudio();
+    if (sessionRef.current) {
+        try {
+            await sessionRef.current.close();
+        } catch (e) {
+            console.error("Error closing session", e);
+        }
+        sessionRef.current = null;
+    }
+    setStatus("disconnected");
+    setIsSpeaking(false);
+    setDebugLog("מנותק");
+  }, [cleanupAudio]);
+
+  // עזרי אודיו
   const floatTo16BitPCM = (float32Array: Float32Array) => {
     const buffer = new ArrayBuffer(float32Array.length * 2);
     const view = new DataView(buffer);
@@ -49,18 +79,16 @@ const App: React.FC = () => {
     return result;
   };
 
-  // פונקציה לניגון אודיו
-  const playAudioData = async (audioData: string) => {
-      if (!audioContextRef.current) return;
-      try {
+  const playAudioData = async (b64Data: string) => {
+    if (!audioContextRef.current) return;
+    try {
         const ctx = audioContextRef.current;
-        const binaryString = atob(audioData);
+        const binaryString = atob(b64Data);
         const len = binaryString.length;
         const bytes = new Uint8Array(len);
         for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
         const pcm16 = new Int16Array(bytes.buffer);
         
-        // Gemini משדר ב-24kHz
         const audioBuffer = ctx.createBuffer(1, pcm16.length, 24000);
         const channelData = audioBuffer.getChannelData(0);
         for (let i=0; i<pcm16.length; i++) channelData[i] = pcm16[i] / 32768.0;
@@ -71,152 +99,154 @@ const App: React.FC = () => {
         sourceNode.onended = () => setIsSpeaking(false);
         sourceNode.start();
         setIsSpeaking(true);
-      } catch (e) {
-          console.error("Audio Play Error", e);
-      }
+    } catch (e) {
+        console.error("Audio playback error:", e);
+    }
   };
 
-  const stopConversation = useCallback(() => {
-    if (processorRef.current) { processorRef.current.disconnect(); processorRef.current = null; }
-    if (activeSessionRef.current) { try { activeSessionRef.current.close(); } catch (e) {} activeSessionRef.current = null; }
-    if (micStreamRef.current) { micStreamRef.current.getTracks().forEach(track => track.stop()); micStreamRef.current = null; }
-    if (audioContextRef.current) { audioContextRef.current.suspend(); }
-    
-    setStatus("disconnected");
-    setIsSpeaking(false);
-    setIsUserTalking(false);
-    setMicVol(0);
-    setDebugLog("מנותק");
-    isWaitingForResponseRef.current = false;
-  }, []);
-
-  const startConversation = async () => {
+  const connect = async () => {
     let apiKey = import.meta.env.VITE_API_KEY || "";
     apiKey = apiKey.trim().replace(/['"]/g, '');
     if (!apiKey) return alert("חסר API KEY");
 
+    // ניתוק קודם אם קיים
+    await disconnect();
+
+    setStatus("connecting");
+    setDebugLog("מתחבר...");
+
     try {
-      stopConversation();
-      setStatus("connecting");
-      setDebugLog("מתחבר...");
-
-      const ctx = new AudioContext();
-      await ctx.resume();
-      audioContextRef.current = ctx;
-
-      const ai = new GoogleGenAI({ apiKey: apiKey });
-      
-      // *** שינוי ארכיטקטורה: מעבר ל-Callbacks בלבד ***
-      // אנחנו לא משתמשים ב-listen() יותר, אלא מגדירים onMessage בתוך הקונפיגורציה.
-      // זה פותר את הבאג של t is not a function בגרסה 0.2.1
-      const session = await ai.live.connect({
-        model: "gemini-2.0-flash-exp",
-        config: { 
-          responseModalities: [Modality.AUDIO],
-          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } }
-        },
-        callbacks: {
-            onOpen: () => {
-                console.log("Connected");
-                setStatus("connected");
-                setDebugLog("מחובר! שולח 'שלום'...");
-                
-                // Kickstart
-                setTimeout(() => {
-                    if (activeSessionRef.current) {
-                        activeSessionRef.current.sendClientContent({ 
-                            turns: [{ role: 'user', parts: [{ text: "Hello" }] }], 
-                            turnComplete: true 
-                        });
-                    }
-                }, 1000);
-            },
-            onMessage: (msg: any) => {
-                // כל הטיפול בתשובות קורה כאן
-                const parts = msg.serverContent?.modelTurn?.parts || [];
-                for (const part of parts) {
-                    const audioData = part.inlineData?.data;
-                    if (audioData) {
-                        setDebugLog("🔊 ה-AI מדבר");
-                        isWaitingForResponseRef.current = false; // שחרור המיקרופון
-                        playAudioData(audioData);
+        const client = new GoogleGenAI({ apiKey });
+        
+        // הגדרת סשן עם כל ההגנות האפשריות
+        const session = await client.live.connect({
+            model: "gemini-2.0-flash-exp",
+            config: {
+                // ביטול כלים כדי למנוע קריסות פנימיות
+                tools: [], 
+                generationConfig: {
+                    responseModalities: ["AUDIO"],
+                    speechConfig: {
+                        voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } }
                     }
                 }
             },
-            onClose: () => {
-                setDebugLog("נותק ע״י השרת");
-                stopConversation();
-            },
-            onError: (e: any) => {
-                console.error("Gemini Error:", e);
-                setDebugLog("שגיאה בחיבור");
+            callbacks: {
+                onOpen: () => {
+                    setStatus("connected");
+                    setDebugLog("מחובר! (מבצע אתחול...)");
+                    // שליחת הודעה ראשונית לחימום המנוע
+                    setTimeout(() => {
+                        session.sendClientContent({
+                            turns: [{ role: "user", parts: [{ text: "Hello" }] }],
+                            turnComplete: true
+                        });
+                    }, 500);
+                },
+                onMessage: (msg: any) => {
+                    const parts = msg.serverContent?.modelTurn?.parts || [];
+                    for (const part of parts) {
+                        if (part.inlineData && part.inlineData.mimeType.startsWith("audio")) {
+                            isWaitingForResponseRef.current = false; // קיבלנו תשובה, אפשר לשחרר את המיקרופון
+                            setDebugLog("🔊 ה-AI מדבר");
+                            playAudioData(part.inlineData.data);
+                        }
+                    }
+                },
+                onClose: (event: any) => {
+                    console.log("Session closed", event);
+                    setStatus("disconnected");
+                    setDebugLog(`נותק (קוד: ${event.code || 'unknown'})`);
+                },
+                onError: (error: any) => {
+                    console.error("Session error", error);
+                    setDebugLog("שגיאה בחיבור");
+                    disconnect();
+                }
             }
-        }
-      });
+        });
 
-      activeSessionRef.current = session;
+        sessionRef.current = session;
 
-      // מיקרופון
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-          audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true } 
-      });
-      micStreamRef.current = stream;
+        // אתחול אודיו (מיקרופון)
+        const ctx = new window.AudioContext();
+        await ctx.resume();
+        audioContextRef.current = ctx;
 
-      const source = ctx.createMediaStreamSource(stream);
-      const processor = ctx.createScriptProcessor(4096, 1, 1);
-      processorRef.current = processor;
-      
-      const zeroGain = ctx.createGain();
-      zeroGain.gain.value = 0;
-      source.connect(processor);
-      processor.connect(zeroGain);
-      zeroGain.connect(ctx.destination);
+        const stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                channelCount: 1,
+                sampleRate: 16000,
+            }
+        });
+        streamRef.current = stream;
 
-      processor.onaudioprocess = (e) => {
-        if (!activeSessionRef.current || isWaitingForResponseRef.current) return;
+        const source = ctx.createMediaStreamSource(stream);
+        const processor = ctx.createScriptProcessor(4096, 1, 1);
+        processorRef.current = processor;
 
-        const inputData = e.inputBuffer.getChannelData(0);
-        
-        let sum = 0;
-        for(let i=0; i<inputData.length; i+=50) sum += Math.abs(inputData[i]);
-        const vol = Math.round(sum * 100);
-        setMicVol(vol);
+        processor.onaudioprocess = (e) => {
+            // אם אנחנו לא מחוברים או מחכים לתשובה - לא לשלוח כלום
+            if (!sessionRef.current || isWaitingForResponseRef.current) return;
 
-        // VAD (זיהוי שתיקה)
-        if (vol > 8) { 
-            // המשתמש מדבר
-            lastVoiceTimeRef.current = Date.now();
-            if (!isUserTalking) setIsUserTalking(true);
+            const inputData = e.inputBuffer.getChannelData(0);
             
-            const downsampled = downsampleBuffer(inputData, ctx.sampleRate, 16000);
-            const pcm16 = floatTo16BitPCM(downsampled);
-            
-            // שימוש ב-sendRealtimeInput לאודיו
-            activeSessionRef.current.sendRealtimeInput({ 
-                mediaChunks: [{ data: pcm16, mimeType: 'audio/pcm;rate=16000' }] 
-            });
+            // חישוב עוצמת קול (VAD)
+            let sum = 0;
+            for (let i = 0; i < inputData.length; i += 50) sum += Math.abs(inputData[i]);
+            const vol = Math.round(sum * 100);
+            setMicVol(vol);
 
-        } else if (isUserTalking) {
-            // שתיקה...
-            const timeSinceVoice = Date.now() - lastVoiceTimeRef.current;
-            if (timeSinceVoice > 1500) { // 1.5 שניות שקט
-                console.log("Silence -> Force Reply");
-                setDebugLog("שתיקה -> מבקש תשובה...");
-                
-                // שליחת פקודת סיום
-                activeSessionRef.current.sendClientContent({ 
-                    turns: [], 
-                    turnComplete: true 
+            // לוגיקת VAD
+            if (vol > 5) {
+                lastVoiceTimeRef.current = Date.now();
+                if (!isUserTalking) setIsUserTalking(true);
+
+                // שליחת אודיו בזמן אמת
+                const pcm16 = floatTo16BitPCM(inputData); // קלט כבר ב-16k בגלל getUserMedia
+                sessionRef.current.sendRealtimeInput({
+                    mediaChunks: [{
+                        mimeType: "audio/pcm",
+                        data: pcm16
+                    }]
                 });
-                
-                // חסימת המיקרופון עד לתשובה
-                isWaitingForResponseRef.current = true;
-                setIsUserTalking(false);
+
+            } else if (isUserTalking) {
+                // זיהוי שתיקה
+                const timeSinceVoice = Date.now() - lastVoiceTimeRef.current;
+                if (timeSinceVoice > 1200) { // 1.2 שניות שקט
+                    console.log("Silence detected -> Ending turn");
+                    setDebugLog("⏳ סיימת לדבר. ממתין...");
+                    
+                    // שליחת סימן שהתור נגמר
+                    sessionRef.current.sendClientContent({
+                        turns: [],
+                        turnComplete: true
+                    });
+
+                    isWaitingForResponseRef.current = true; // חוסם שליחה עד שתתקבל תשובה
+                    setIsUserTalking(false);
+                }
             }
-        }
-      };
-      
-    } catch (e: any) { stopConversation(); alert(e.message); }
+        };
+
+        source.connect(processor);
+        processor.connect(ctx.destination); // נדרש כדי שה-ScriptProcessor יפעל בכרום
+
+    } catch (err: any) {
+        console.error(err);
+        setDebugLog("שגיאה בהתחברות: " + err.message);
+        disconnect();
+    }
+  };
+
+  // כפתור חילוץ ידני
+  const manualStop = () => {
+      if (sessionRef.current) {
+          setDebugLog("⚡ שליחה ידנית");
+          sessionRef.current.sendClientContent({ turns: [], turnComplete: true });
+          isWaitingForResponseRef.current = true;
+      }
   };
 
   return (
@@ -230,9 +260,9 @@ const App: React.FC = () => {
             LOG: {debugLog}
         </div>
         <div className="flex items-center justify-center gap-2">
-            <Volume2 size={16} className={micVol > 8 ? "text-green-400" : "text-slate-600"} />
+            <Volume2 size={16} className={micVol > 5 ? "text-green-400" : "text-slate-600"} />
             <div className="w-32 h-2 bg-slate-700 rounded-full overflow-hidden">
-                <div className={`h-full transition-all duration-75 ${micVol > 8 ? 'bg-green-500' : 'bg-slate-500'}`} style={{ width: `${Math.min(micVol, 100)}%` }} />
+                <div className={`h-full transition-all duration-75 ${micVol > 5 ? 'bg-green-500' : 'bg-slate-500'}`} style={{ width: `${Math.min(micVol, 100)}%` }} />
             </div>
             <span className="text-xs text-slate-400">{micVol}</span>
         </div>
@@ -241,9 +271,9 @@ const App: React.FC = () => {
       <div className="relative">
         <Avatar state={status === "connected" ? (isSpeaking ? 'speaking' : (isUserTalking ? 'listening' : 'idle')) : 'idle'} />
         
-        <div className="absolute -bottom-24 left-1/2 -translate-x-1/2 w-full flex justify-center">
+        <div className="absolute -bottom-24 left-1/2 -translate-x-1/2 w-full flex justify-center gap-4">
             <button 
-                onClick={status === "connected" ? stopConversation : startConversation}
+                onClick={status === "connected" ? disconnect : connect}
                 className={`flex items-center gap-3 px-8 py-4 rounded-full font-bold text-xl shadow-2xl transition-all active:scale-95 ${
                     status === "connected" 
                     ? 'bg-red-500 hover:bg-red-600 shadow-red-500/20' 
@@ -256,10 +286,16 @@ const App: React.FC = () => {
                     <> <Mic size={24} /> Start </>
                 )}
             </button>
+            
+            {status === "connected" && (
+                <button onClick={manualStop} className="bg-gray-700 p-4 rounded-full hover:bg-gray-600">
+                    <Send size={24} />
+                </button>
+            )}
         </div>
       </div>
-      
-      {(status === "connected") && (
+
+      {status === "connected" && (
          <div className="fixed bottom-0 w-full h-32 pointer-events-none opacity-50">
             <AudioVisualizer isActive={true} color={isSpeaking ? "#a78bfa" : (isUserTalking ? "#34d399" : "#4b5563")} />
          </div>
