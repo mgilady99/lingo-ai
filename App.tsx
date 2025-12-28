@@ -1,5 +1,4 @@
-
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenAI, Modality } from '@google/genai';
 import { Mic, AlertTriangle, CheckCircle, Square, Volume2 } from 'lucide-react';
 import Avatar from './components/Avatar';
@@ -49,6 +48,31 @@ const App: React.FC = () => {
     return result;
   };
 
+  // פונקציה לניגון אודיו שמגיע מהשרת
+  const playAudioData = async (audioData: string) => {
+      if (!audioContextRef.current) return;
+      try {
+        const ctx = audioContextRef.current;
+        const binaryString = atob(audioData);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
+        const pcm16 = new Int16Array(bytes.buffer);
+        const audioBuffer = ctx.createBuffer(1, pcm16.length, 24000); // 24kHz זה הסטנדרט של Gemini
+        const channelData = audioBuffer.getChannelData(0);
+        for (let i=0; i<pcm16.length; i++) channelData[i] = pcm16[i] / 32768.0;
+
+        const sourceNode = ctx.createBufferSource();
+        sourceNode.buffer = audioBuffer;
+        sourceNode.connect(ctx.destination);
+        sourceNode.onended = () => setIsSpeaking(false);
+        sourceNode.start();
+        setIsSpeaking(true);
+      } catch (e) {
+          console.error("Audio Play Error", e);
+      }
+  };
+
   const stopConversation = useCallback(() => {
     if (processorRef.current) { processorRef.current.disconnect(); processorRef.current = null; }
     if (activeSessionRef.current) { try { activeSessionRef.current.close(); } catch (e) {} activeSessionRef.current = null; }
@@ -79,15 +103,9 @@ const App: React.FC = () => {
 
       const ai = new GoogleGenAI({ apiKey: apiKey });
       
-      // הגדרת פונקציות דמי למניעת קריסה (ה"ביטוח")
-      const safeCallbacks = {
-        onopen: () => console.log("Safe: Open"),
-        onmessage: () => {}, // משאירים ריק כי אנחנו משתמשים בלולאה
-        onclose: () => console.log("Safe: Close"),
-        onerror: (e: any) => console.error("Safe: Error", e)
-      };
-
-      // חיבור עם הזרקה כפולה של Callbacks
+      // *** השינוי הקריטי: מעבר מלא ל-Callbacks ***
+      // אנחנו לא משתמשים ב-listen() יותר, אלא מגדירים onMessage
+      // זה אמור למנוע את השגיאה t is not a function
       const session = await ai.live.connect({
         model: "gemini-2.0-flash-exp",
         config: { 
@@ -95,29 +113,46 @@ const App: React.FC = () => {
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } }
         },
         callbacks: {
-            ...safeCallbacks,
-            // גרסה גדולה למקרה שהספרייה דורשת CamelCase
-            onOpen: safeCallbacks.onopen,
-            onMessage: safeCallbacks.onmessage,
-            onClose: safeCallbacks.onclose,
-            onError: safeCallbacks.onerror
+            onOpen: () => {
+                console.log("Connected");
+                setStatus("connected");
+                setDebugLog("מחובר! שולח 'שלום'...");
+                
+                // Kickstart עם הפונקציה החדשה
+                setTimeout(() => {
+                    if (activeSessionRef.current) {
+                        activeSessionRef.current.sendClientContent({ 
+                            turns: [{ role: 'user', parts: [{ text: "Hello" }] }], 
+                            turnComplete: true 
+                        });
+                    }
+                }, 1000);
+            },
+            onMessage: (msg: any) => {
+                // כל הטיפול בתשובות קורה כאן
+                const parts = msg.serverContent?.modelTurn?.parts || [];
+                for (const part of parts) {
+                    const audioData = part.inlineData?.data;
+                    if (audioData) {
+                        setDebugLog("🔊 ה-AI מדבר");
+                        // שחרור החסימה - ה-AI ענה, אפשר להקשיב שוב
+                        isWaitingForResponseRef.current = false; 
+                        playAudioData(audioData);
+                    }
+                }
+            },
+            onClose: () => {
+                setDebugLog("נותק ע״י השרת");
+                stopConversation();
+            },
+            onError: (e: any) => {
+                console.error("Gemini Error:", e);
+                setDebugLog("שגיאה בחיבור");
+            }
         }
       });
 
       activeSessionRef.current = session;
-      setStatus("connected");
-      setDebugLog("מחובר! שולח 'שלום'...");
-      isWaitingForResponseRef.current = false;
-
-      // Kickstart - שימוש ב-sendClientContent (חובה לטקסט)
-      setTimeout(() => {
-          if (activeSessionRef.current) {
-              activeSessionRef.current.sendClientContent({ 
-                  turns: [{ role: 'user', parts: [{ text: "Hello" }] }], 
-                  turnComplete: true 
-              });
-          }
-      }, 1000);
 
       // מיקרופון
       const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -147,20 +182,22 @@ const App: React.FC = () => {
 
         // VAD (זיהוי שתיקה)
         if (vol > 8) { 
+            // המשתמש מדבר
             lastVoiceTimeRef.current = Date.now();
             if (!isUserTalking) setIsUserTalking(true);
             
             const downsampled = downsampleBuffer(inputData, ctx.sampleRate, 16000);
             const pcm16 = floatTo16BitPCM(downsampled);
             
-            // שימוש ב-sendRealtimeInput (חובה לאודיו)
+            // שליחת אודיו בפקודה החדשה
             activeSessionRef.current.sendRealtimeInput({ 
                 mediaChunks: [{ data: pcm16, mimeType: 'audio/pcm;rate=16000' }] 
             });
 
         } else if (isUserTalking) {
+            // שתיקה...
             const timeSinceVoice = Date.now() - lastVoiceTimeRef.current;
-            if (timeSinceVoice > 1500) { 
+            if (timeSinceVoice > 1500) { // 1.5 שניות שקט
                 console.log("Silence -> Force Reply");
                 setDebugLog("שתיקה -> מבקש תשובה...");
                 
@@ -170,47 +207,12 @@ const App: React.FC = () => {
                     turnComplete: true 
                 });
                 
+                // חסימת המיקרופון עד לתשובה כדי למנוע הפרעות
                 isWaitingForResponseRef.current = true;
                 setIsUserTalking(false);
             }
         }
       };
-
-      // לולאת האזנה
-      (async () => {
-        try {
-            for await (const msg of session.listen()) {
-                const parts = msg.serverContent?.modelTurn?.parts || [];
-                for (const part of parts) {
-                    const audioData = part.inlineData?.data;
-                    if (audioData) {
-                        setDebugLog("🔊 ה-AI מדבר");
-                        setIsSpeaking(true);
-                        isWaitingForResponseRef.current = false;
-                        
-                        const binaryString = atob(audioData);
-                        const len = binaryString.length;
-                        const bytes = new Uint8Array(len);
-                        for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
-                        const pcm16 = new Int16Array(bytes.buffer);
-                        const audioBuffer = ctx.createBuffer(1, pcm16.length, 24000);
-                        const channelData = audioBuffer.getChannelData(0);
-                        for (let i=0; i<pcm16.length; i++) channelData[i] = pcm16[i] / 32768.0;
-
-                        const sourceNode = ctx.createBufferSource();
-                        sourceNode.buffer = audioBuffer;
-                        sourceNode.connect(ctx.destination);
-                        sourceNode.onended = () => setIsSpeaking(false);
-                        sourceNode.start();
-                    }
-                }
-            }
-        } catch (e) {
-            console.log("Loop Error", e);
-            setDebugLog("השיחה הסתיימה");
-            stopConversation();
-        }
-      })();
       
     } catch (e: any) { stopConversation(); alert(e.message); }
   };
@@ -226,42 +228,4 @@ const App: React.FC = () => {
             LOG: {debugLog}
         </div>
         <div className="flex items-center justify-center gap-2">
-            <Volume2 size={16} className={micVol > 8 ? "text-green-400" : "text-slate-600"} />
-            <div className="w-32 h-2 bg-slate-700 rounded-full overflow-hidden">
-                <div className={`h-full transition-all duration-75 ${micVol > 8 ? 'bg-green-500' : 'bg-slate-500'}`} style={{ width: `${Math.min(micVol, 100)}%` }} />
-            </div>
-            <span className="text-xs text-slate-400">{micVol}</span>
-        </div>
-      </div>
-
-      <div className="relative">
-        <Avatar state={status === "connected" ? (isSpeaking ? 'speaking' : (isUserTalking ? 'listening' : 'idle')) : 'idle'} />
-        
-        <div className="absolute -bottom-24 left-1/2 -translate-x-1/2 w-full flex justify-center">
-            <button 
-                onClick={status === "connected" ? stopConversation : startConversation}
-                className={`flex items-center gap-3 px-8 py-4 rounded-full font-bold text-xl shadow-2xl transition-all active:scale-95 ${
-                    status === "connected" 
-                    ? 'bg-red-500 hover:bg-red-600 shadow-red-500/20' 
-                    : 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-500/30'
-                }`}
-            >
-                {status === "connected" ? (
-                    <> <Square fill="currentColor" size={20} /> Stop </>
-                ) : (
-                    <> <Mic size={24} /> Start </>
-                )}
-            </button>
-        </div>
-      </div>
-      
-      {(status === "connected") && (
-         <div className="fixed bottom-0 w-full h-32 pointer-events-none opacity-50">
-            <AudioVisualizer isActive={true} color={isSpeaking ? "#a78bfa" : (isUserTalking ? "#34d399" : "#4b5563")} />
-         </div>
-      )}
-    </div>
-  );
-};
-
-export default App;
+            <Volume2 size={16} className={micVol > 8 ? "text
