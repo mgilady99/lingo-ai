@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenAI, Modality } from '@google/genai';
-import { Mic, Headphones, ArrowLeftRight, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Mic, Headphones, ArrowLeftRight, AlertTriangle, CheckCircle, Square } from 'lucide-react';
 import { ConnectionStatus, SUPPORTED_LANGUAGES, SCENARIOS, Language, PracticeScenario } from './types';
 import { decode, decodeAudioData, createPcmBlob } from './services/audioService';
 import Avatar from './components/Avatar';
@@ -40,36 +40,39 @@ const App: React.FC = () => {
   const stopConversation = useCallback(() => {
     if (activeSessionRef.current) { try { activeSessionRef.current.close(); } catch (e) {} activeSessionRef.current = null; }
     if (micStreamRef.current) { micStreamRef.current.getTracks().forEach(track => track.stop()); micStreamRef.current = null; }
+    
+    // סגירת הקשרי אודיו כדי לשחרר את המערכת
+    if (inputAudioContextRef.current) { inputAudioContextRef.current.close(); inputAudioContextRef.current = null; }
+    if (outputAudioContextRef.current) { outputAudioContextRef.current.close(); outputAudioContextRef.current = null; }
+
     setStatus(ConnectionStatus.DISCONNECTED);
     setIsSpeaking(false);
   }, []);
 
   const startConversation = async () => {
-    // 1. שליפת המפתח
     let apiKey = import.meta.env.VITE_API_KEY || "";
-    apiKey = apiKey.trim().replace(/['"]/g, ''); // ניקוי
+    apiKey = apiKey.trim().replace(/['"]/g, '');
 
-    if (!apiKey) {
-      alert("שגיאה: המפתח לא נמצא.");
-      return;
-    }
+    if (!apiKey) return alert("המפתח חסר.");
 
     try {
-      stopConversation();
+      stopConversation(); // ניקוי שאריות אם יש
       setStatus(ConnectionStatus.CONNECTING);
 
-      // ************************************************************************
-      // התיקון הקריטי: העברת המפתח כאובייקט { apiKey: ... }
-      // זה מה שפותר את השגיאה "API Key must be set"
-      // ************************************************************************
       const ai = new GoogleGenAI({ apiKey: apiKey });
       
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       micStreamRef.current = stream;
 
-      const inCtx = new AudioContext();
+      // יצירת הקשרי אודיו + הפעלה כפויה (Resume) לפתרון בעיות שמע
+      const inCtx = new AudioContext({ sampleRate: 16000 }); // כפיית קצב דגימה לגוגל
+      const outCtx = new AudioContext({ sampleRate: 24000 }); // כפיית קצב יציאה
+      
+      await inCtx.resume();
+      await outCtx.resume();
+      
       inputAudioContextRef.current = inCtx;
-      outputAudioContextRef.current = new AudioContext();
+      outputAudioContextRef.current = outCtx;
 
       const session = await ai.live.connect({
         model: "gemini-2.0-flash-exp",
@@ -83,7 +86,6 @@ const App: React.FC = () => {
             onmessage: () => {}, 
             onerror: (e) => {
                 console.error("Gemini Error:", e);
-                alert("שגיאת חיבור לגוגל (בדוק Console לפרטים)");
                 stopConversation();
             }, 
             onclose: () => console.log("Closed") 
@@ -92,9 +94,11 @@ const App: React.FC = () => {
       activeSessionRef.current = session;
 
       const source = inCtx.createMediaStreamSource(stream);
+      // שימוש ב-ScriptProcessor בזהירות
       const scriptProcessor = inCtx.createScriptProcessor(4096, 1, 1);
       scriptProcessor.onaudioprocess = (e) => {
         if (activeSessionRef.current && activeSessionRef.current.send) {
+          // שליחת המידע לגוגל
           const pcmBase64 = createPcmBlob(e.inputBuffer.getChannelData(0), inCtx.sampleRate);
           activeSessionRef.current.send({ realtimeInput: { mediaChunks: [{ data: pcmBase64, mimeType: 'audio/pcm;rate=16000' }] } });
         }
@@ -123,7 +127,6 @@ const App: React.FC = () => {
       })();
       setStatus(ConnectionStatus.CONNECTED);
     } catch (e: any) { 
-      console.error("Connection Failed Logic:", e);
       stopConversation(); 
       alert(`Connection failed: ${e.message}`); 
     }
@@ -133,8 +136,8 @@ const App: React.FC = () => {
     <div className={`h-screen bg-slate-950 flex flex-col text-slate-200 overflow-hidden font-['Inter'] ${dir}`} dir={dir}>
       
       {/* סרגל בדיקה */}
-      <div className={`w-full ${keyColor} text-white font-bold p-3 text-center text-lg flex items-center justify-center gap-2 z-50 shadow-lg`}>
-        {keyColor.includes('green') ? <CheckCircle size={24} /> : <AlertTriangle size={24} />}
+      <div className={`w-full ${keyColor} text-white font-bold p-2 text-center text-sm flex items-center justify-center gap-2 z-50 shadow-lg`}>
+        {keyColor.includes('green') ? <CheckCircle size={16} /> : <AlertTriangle size={16} />}
         STATUS: {keyStatus}
       </div>
 
@@ -148,6 +151,7 @@ const App: React.FC = () => {
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden">
         <div className="w-full md:w-[400px] flex flex-col p-4 gap-4 bg-slate-900/30 border-r border-white/5 shadow-2xl overflow-y-auto">
           <div className="bg-slate-900/90 rounded-[2rem] border border-white/10 p-6 flex flex-col gap-4">
+            {/* ... שאר האלמנטים של בחירת שפה ... */}
             <div className="bg-slate-800/40 p-4 rounded-2xl border border-white/5 flex items-center gap-3">
                 <select value={nativeLang.code} onChange={e => setNativeLang(SUPPORTED_LANGUAGES.find(l => l.code === e.target.value)!)} className="bg-slate-900 border border-white/10 rounded-xl px-4 py-4 text-sm font-bold w-full text-center">{SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}</select>
                 <ArrowLeftRight size={20} className="text-indigo-500 shrink-0" />
@@ -165,10 +169,21 @@ const App: React.FC = () => {
 
           <div className="flex flex-col items-center py-4 flex-1 justify-center relative min-h-[300px]">
             <Avatar state={status === ConnectionStatus.CONNECTED ? (isSpeaking ? 'speaking' : 'listening') : 'idle'} />
-            <button onClick={status === ConnectionStatus.CONNECTED ? stopConversation : startConversation} className={`mt-8 px-12 py-5 rounded-full font-black text-2xl shadow-2xl flex items-center gap-4 transition-all active:scale-95 ${status === ConnectionStatus.CONNECTED ? 'bg-red-500' : 'bg-indigo-600 shadow-indigo-600/30'}`}>
-                <Mic size={28} /> {status === ConnectionStatus.CONNECTED ? t('stop_conversation') : t('start_conversation')}
+            
+            {/* כפתור הפעלה/עצירה עם Z-INDEX גבוה כדי שלא יוסתר */}
+            <button 
+                onClick={status === ConnectionStatus.CONNECTED ? stopConversation : startConversation} 
+                className={`mt-8 px-12 py-5 rounded-full font-black text-2xl shadow-2xl flex items-center gap-4 transition-all active:scale-95 z-20 relative ${status === ConnectionStatus.CONNECTED ? 'bg-red-500 hover:bg-red-600' : 'bg-indigo-600 shadow-indigo-600/30 hover:bg-indigo-500'}`}
+            >
+                {status === ConnectionStatus.CONNECTED ? <><Square size={24} fill="currentColor" /> {t('stop_conversation')}</> : <><Mic size={28} /> {t('start_conversation')}</>}
             </button>
-            {(isSpeaking || status === ConnectionStatus.CONNECTED) && <div className="absolute bottom-8 w-full px-12"><AudioVisualizer isActive={true} color={isSpeaking ? "#6366f1" : "#10b981"} /></div>}
+
+            {/* ויזואליזציה עם POINTER-EVENTS-NONE כדי לא לחסום לחיצות */}
+            {(isSpeaking || status === ConnectionStatus.CONNECTED) && 
+             <div className="absolute bottom-8 w-full px-12 z-10 pointer-events-none">
+                <AudioVisualizer isActive={true} color={isSpeaking ? "#6366f1" : "#10b981"} />
+             </div>
+            }
           </div>
         </div>
       </main>
