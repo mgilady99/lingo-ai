@@ -1,6 +1,7 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+
+import React, { useState, useRef, useCallback } from 'react';
 import { GoogleGenAI, Modality } from '@google/genai';
-import { Mic, AlertTriangle, CheckCircle, Square, Activity, Volume2, Zap } from 'lucide-react';
+import { Mic, AlertTriangle, CheckCircle, Square, Volume2 } from 'lucide-react';
 import Avatar from './components/Avatar';
 import AudioVisualizer from './components/AudioVisualizer';
 
@@ -48,20 +49,33 @@ const App: React.FC = () => {
     return result;
   };
 
-  // --- שליחה בטוחה ---
+  // --- פונקציית שליחה חכמה ובטוחה ---
   const safeSend = (data: any) => {
       const s = activeSessionRef.current;
       if (!s) return;
       try {
-          if (typeof s.send === 'function') s.send(data);
-          else if (typeof s.sendRealtimeInput === 'function' && data.realtimeInput) s.sendRealtimeInput(data.realtimeInput);
-          else if (typeof s.sendClientContent === 'function' && data.clientContent) s.sendClientContent(data.clientContent);
-      } catch (e) { console.error(e); }
+          // מנסים את כל האפשרויות כדי לא לקרוס
+          if (typeof s.sendRealtimeInput === 'function' && data.realtimeInput) {
+              s.sendRealtimeInput(data.realtimeInput);
+          } else if (typeof s.sendClientContent === 'function' && data.clientContent) {
+              s.sendClientContent(data.clientContent);
+          } else if (typeof s.send === 'function') {
+              s.send(data);
+          } else {
+              console.warn("No send method found on session object");
+          }
+      } catch (e) { 
+          console.error("SafeSend Error:", e); 
+      }
   };
 
   const stopConversation = useCallback(() => {
     if (processorRef.current) { processorRef.current.disconnect(); processorRef.current = null; }
-    if (activeSessionRef.current) { try { activeSessionRef.current.close(); } catch (e) {} activeSessionRef.current = null; }
+    if (activeSessionRef.current) { 
+        // מנסים לסגור בצורה נקייה
+        try { activeSessionRef.current.close(); } catch (e) {} 
+        activeSessionRef.current = null; 
+    }
     if (micStreamRef.current) { micStreamRef.current.getTracks().forEach(track => track.stop()); micStreamRef.current = null; }
     if (audioContextRef.current) { audioContextRef.current.suspend(); }
     
@@ -88,42 +102,28 @@ const App: React.FC = () => {
 
       const ai = new GoogleGenAI({ apiKey: apiKey });
       
-      // הגדרת הפונקציות גם בקטן וגם בגדול למניעת קריסה
-      const eventHandlers = {
-          onopen: () => { 
-              console.log("Connected");
-              setStatus("connected");
-              setDebugLog("מחובר!");
-              setTimeout(() => safeSend({ clientContent: { turns: [{ role: 'user', parts: [{ text: "Hello" }] }] }, turnComplete: true }), 1000);
-          },
-          onmessage: () => {}, 
-          onclose: () => {
-              setDebugLog("נותק ע״י השרת");
-              stopConversation();
-          },
-          onerror: (e: any) => {
-              console.error(e);
-              setDebugLog("שגיאה בחיבור");
-          }
-      };
-
+      // 1. חיבור ללא Callbacks (מונע את הקריסה!)
       const session = await ai.live.connect({
         model: "gemini-2.0-flash-exp",
         config: { 
           responseModalities: [Modality.AUDIO],
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } }
-        },
-        // *** הטריק שמונע את הקריסה: גם וגם ***
-        callbacks: {
-            ...eventHandlers,
-            onOpen: eventHandlers.onopen,
-            onMessage: eventHandlers.onmessage,
-            onClose: eventHandlers.onclose,
-            onError: eventHandlers.onerror
         }
       });
-      activeSessionRef.current = session;
 
+      activeSessionRef.current = session;
+      
+      // עדכון ידני שהחיבור הצליח
+      console.log("Connected successfully!");
+      setStatus("connected");
+      setDebugLog("מחובר! (מבצע התנעה...)");
+
+      // Kickstart - שליחת הודעה ראשונה
+      setTimeout(() => {
+          safeSend({ clientContent: { turns: [{ role: 'user', parts: [{ text: "Hello" }] }] }, turnComplete: true });
+      }, 1000);
+
+      // 2. הפעלת מיקרופון
       const stream = await navigator.mediaDevices.getUserMedia({ 
           audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true } 
       });
@@ -144,42 +144,53 @@ const App: React.FC = () => {
 
         const inputData = e.inputBuffer.getChannelData(0);
         
+        // חישוב ווליום
         let sum = 0;
         for(let i=0; i<inputData.length; i+=50) sum += Math.abs(inputData[i]);
         const vol = Math.round(sum * 100);
         setMicVol(vol);
 
-        // VAD: זיהוי דיבור ושתיקה
+        // VAD - לוגיקה לזיהוי שתיקה
         if (vol > 5) { 
+            // המשתמש מדבר
             lastVoiceTimeRef.current = Date.now();
             silenceTriggeredRef.current = false;
             if (!isUserTalking) setIsUserTalking(true);
             
+            // שליחת אודיו
             const downsampled = downsampleBuffer(inputData, ctx.sampleRate, 16000);
             const pcm16 = floatTo16BitPCM(downsampled);
             safeSend({ realtimeInput: { mediaChunks: [{ data: pcm16, mimeType: 'audio/pcm;rate=16000' }] } });
 
         } else if (isUserTalking && !silenceTriggeredRef.current) {
+            // שקט... בודקים כמה זמן
             const timeSinceVoice = Date.now() - lastVoiceTimeRef.current;
             if (timeSinceVoice > 1200) { 
-                console.log("Silence -> Sending turnComplete");
+                console.log("Silence detected -> Sending turnComplete");
                 setDebugLog("שתיקה -> מבקש תשובה");
+                
+                // שליחת פקודת "סיימתי לדבר"
                 safeSend({ clientContent: { turns: [] }, turnComplete: true });
+                
                 silenceTriggeredRef.current = true;
                 setIsUserTalking(false);
             }
         }
       };
 
+      // 3. לולאת האזנה (Async Iterator) - מחליפה את ה-callbacks שקרסו
       (async () => {
         try {
-            if (!session.listen) return;
+            // לולאה שמחכה להודעות מהשרת
             for await (const msg of session.listen()) {
                 const parts = msg.serverContent?.modelTurn?.parts || [];
                 for (const part of parts) {
                     const audioData = part.inlineData?.data;
                     if (audioData) {
+                        setDebugLog("🔊 שומע תשובה...");
                         setIsSpeaking(true);
+                        
+                        // ניגון האודיו
                         const binaryString = atob(audioData);
                         const len = binaryString.length;
                         const bytes = new Uint8Array(len);
@@ -197,7 +208,11 @@ const App: React.FC = () => {
                     }
                 }
             }
-        } catch (e) { console.error(e); }
+        } catch (e: any) {
+            console.error("Listen Loop Error:", e);
+            setDebugLog("השיחה הסתיימה");
+            stopConversation();
+        }
       })();
       
     } catch (e: any) { stopConversation(); alert(e.message); }
