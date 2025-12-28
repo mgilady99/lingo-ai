@@ -16,9 +16,8 @@ const App: React.FC = () => {
   const audioContextRef = useRef<AudioContext | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   
-  // משתנים לזיהוי שתיקה
   const lastVoiceTimeRef = useRef<number>(0);
-  const silenceTimerRef = useRef<any>(null);
+  const silenceTriggeredRef = useRef<boolean>(false);
   const isWaitingForResponseRef = useRef<boolean>(false);
 
   // --- עזרי אודיו ---
@@ -50,7 +49,7 @@ const App: React.FC = () => {
     return result;
   };
 
-  // --- פונקציית שליחה אגרסיבית ---
+  // --- שליחה בטוחה ---
   const sendToGemini = (data: any) => {
       const s = activeSessionRef.current;
       if (!s) return;
@@ -71,12 +70,12 @@ const App: React.FC = () => {
     if (micStreamRef.current) { micStreamRef.current.getTracks().forEach(track => track.stop()); micStreamRef.current = null; }
     if (audioContextRef.current) { audioContextRef.current.suspend(); }
     
-    clearTimeout(silenceTimerRef.current);
     setStatus("disconnected");
     setIsSpeaking(false);
     setIsUserTalking(false);
     setMicVol(0);
     setDebugLog("מנותק");
+    isWaitingForResponseRef.current = false;
   }, []);
 
   const startConversation = async () => {
@@ -95,17 +94,33 @@ const App: React.FC = () => {
 
       const ai = new GoogleGenAI({ apiKey: apiKey });
       
+      // הגדרת פונקציות דמי (Dummy) כדי למנוע קריסה פנימית של הספרייה
+      const dummyCallbacks = {
+          onopen: () => console.log("Internal: Open"),
+          onmessage: () => {}, // משאירים ריק כי אנחנו משתמשים ב-listen()
+          onclose: () => console.log("Internal: Close"),
+          onerror: () => console.log("Internal: Error")
+      };
+
       const session = await ai.live.connect({
         model: "gemini-2.0-flash-exp",
         config: { 
           responseModalities: [Modality.AUDIO],
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } }
+        },
+        // *** הביטוח הכפול: מעבירים גם קטן וגם גדול ***
+        callbacks: {
+            ...dummyCallbacks,
+            onOpen: dummyCallbacks.onopen,
+            onMessage: dummyCallbacks.onmessage,
+            onClose: dummyCallbacks.onclose,
+            onError: dummyCallbacks.onerror
         }
       });
 
       activeSessionRef.current = session;
       setStatus("connected");
-      setDebugLog("מחובר! (מתניע...)");
+      setDebugLog("מחובר! דבר איתי...");
       isWaitingForResponseRef.current = false;
 
       // Kickstart
@@ -134,42 +149,37 @@ const App: React.FC = () => {
 
         const inputData = e.inputBuffer.getChannelData(0);
         
-        // חישוב ווליום
+        // ווליום
         let sum = 0;
         for(let i=0; i<inputData.length; i+=50) sum += Math.abs(inputData[i]);
         const vol = Math.round(sum * 100);
         setMicVol(vol);
 
-        // --- לוגיקת VAD (זיהוי שתיקה) ---
+        // --- מנגנון שבירת שתיקה (VAD) ---
         if (vol > 8) { 
-            // המשתמש מדבר
             lastVoiceTimeRef.current = Date.now();
+            silenceTriggeredRef.current = false;
             if (!isUserTalking) {
                 setIsUserTalking(true);
-                setDebugLog("🎤 שומע דיבור...");
+                // setDebugLog("🎤 שומע...");
             }
             
-            // שליחת אודיו
             const downsampled = downsampleBuffer(inputData, ctx.sampleRate, 16000);
             const pcm16 = floatTo16BitPCM(downsampled);
             sendToGemini({ realtimeInput: { mediaChunks: [{ data: pcm16, mimeType: 'audio/pcm;rate=16000' }] } });
 
         } else if (isUserTalking) {
-            // כרגע שקט, בודקים כמה זמן עבר
+            // שתיקה...
             const timeSinceVoice = Date.now() - lastVoiceTimeRef.current;
             
-            if (timeSinceVoice > 1500) { // 1.5 שניות של שקט מוחלט
-                console.log("Silence -> Forcing Response");
-                setDebugLog("⏳ שתיקה -> שולח פקודת סיום!");
+            if (timeSinceVoice > 1200) { // 1.2 שניות של שקט
+                console.log("Silence detected -> Force Answer");
+                setDebugLog("⏳ סיימת לדבר, ממתין לתשובה...");
                 
-                // *** הטריק: שליחת הודעה ריקה + turnComplete ***
-                // זה מכריח את המודל להפסיק להקשיב ולענות
-                sendToGemini({ 
-                    clientContent: { turns: [{ role: 'user', parts: [{ text: "" }] }] }, 
-                    turnComplete: true 
-                });
+                // שליחת פקודת סיום אגרסיבית
+                sendToGemini({ clientContent: { turns: [] }, turnComplete: true });
                 
-                isWaitingForResponseRef.current = true; // מפסיק לשלוח אודיו עד שמקבל תשובה
+                isWaitingForResponseRef.current = true; // חסימת המיקרופון עד לתשובה
                 setIsUserTalking(false);
             }
         }
@@ -183,9 +193,9 @@ const App: React.FC = () => {
                 for (const part of parts) {
                     const audioData = part.inlineData?.data;
                     if (audioData) {
-                        setDebugLog("🔊 ה-AI עונה!");
+                        setDebugLog("🔊 ה-AI מדבר");
                         setIsSpeaking(true);
-                        isWaitingForResponseRef.current = false; // אפשר לחזור להקשיב אח"כ
+                        isWaitingForResponseRef.current = false; // שחרור המיקרופון
                         
                         const binaryString = atob(audioData);
                         const len = binaryString.length;
@@ -205,7 +215,7 @@ const App: React.FC = () => {
                 }
             }
         } catch (e) {
-            console.log("Loop ended", e);
+            console.log("Loop Error", e);
             setDebugLog("השיחה הסתיימה");
             stopConversation();
         }
