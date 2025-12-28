@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenAI, Modality } from '@google/genai';
-import { Mic, Headphones, ArrowLeftRight, AlertTriangle, CheckCircle, Square, Activity } from 'lucide-react';
+import { Mic, Headphones, ArrowLeftRight, AlertTriangle, CheckCircle, Square, Activity, MessageSquare } from 'lucide-react';
 import { ConnectionStatus, SUPPORTED_LANGUAGES, SCENARIOS, Language, PracticeScenario } from './types';
 import Avatar from './components/Avatar';
 import AudioVisualizer from './components/AudioVisualizer';
@@ -13,12 +13,11 @@ const App: React.FC = () => {
   const [selectedScenario, setSelectedScenario] = useState<PracticeScenario>(SCENARIOS[0]);
   const [isSpeaking, setIsSpeaking] = useState(false);
   
-  // משתני דיבאג
+  // דיבאג
   const [keyStatus, setKeyStatus] = useState<string>("טוען...");
   const [keyColor, setKeyColor] = useState<string>("bg-gray-500");
   const [debugLog, setDebugLog] = useState<string>("מוכן"); 
   const [micVol, setMicVol] = useState<number>(0);
-  const [realSampleRate, setRealSampleRate] = useState<number>(0); // הצגת קצב הדגימה האמיתי
 
   const activeSessionRef = useRef<any>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
@@ -40,8 +39,7 @@ const App: React.FC = () => {
   const t = (key: string) => translations[nativeLang.code]?.[key] || translations['en-US']?.[key] || key;
   const dir = (nativeLang.code === 'he-IL' || nativeLang.code === 'ar-SA') ? 'rtl' : 'ltr';
 
-  // --- פונקציות המרה (Resampling) ---
-  // דוחס את האודיו לקצב 16000 הרץ כדי שגוגל יבין את הדיבור
+  // --- המרת אודיו ---
   const downsampleBuffer = (buffer: Float32Array, inputRate: number, outputRate: number) => {
     if (outputRate === inputRate) return buffer;
     const sampleRateRatio = inputRate / outputRate;
@@ -78,36 +76,18 @@ const App: React.FC = () => {
     }
     return window.btoa(binary);
   };
-  // ------------------------------------------------
+  // -------------------
 
   const stopConversation = useCallback(() => {
-    console.log("Stopping conversation...");
-    
-    if (activeSessionRef.current) { 
-        try { activeSessionRef.current.close(); } catch (e) {} 
-        activeSessionRef.current = null; 
-    }
-    
-    if (micStreamRef.current) { 
-        micStreamRef.current.getTracks().forEach(track => track.stop()); 
-        micStreamRef.current = null; 
-    }
-    
-    if (processorRef.current) {
-        processorRef.current.disconnect();
-        processorRef.current = null;
-    }
-
-    if (audioContextRef.current) { 
-        audioContextRef.current.close(); 
-        audioContextRef.current = null; 
-    }
-
+    console.log("Stopping...");
+    if (activeSessionRef.current) { try { activeSessionRef.current.close(); } catch (e) {} activeSessionRef.current = null; }
+    if (micStreamRef.current) { micStreamRef.current.getTracks().forEach(track => track.stop()); micStreamRef.current = null; }
+    if (processorRef.current) { processorRef.current.disconnect(); processorRef.current = null; }
+    if (audioContextRef.current) { audioContextRef.current.close(); audioContextRef.current = null; }
     setStatus(ConnectionStatus.DISCONNECTED);
     setIsSpeaking(false);
     setDebugLog("מנותק.");
     setMicVol(0);
-    setRealSampleRate(0);
   }, []);
 
   const startConversation = async () => {
@@ -119,63 +99,55 @@ const App: React.FC = () => {
     try {
       stopConversation();
       setStatus(ConnectionStatus.CONNECTING);
-      setDebugLog("מתחבר לגוגל...");
+      setDebugLog("מתחבר...");
 
       const ai = new GoogleGenAI({ apiKey: apiKey });
       
-      // 1. יצירת הקשר אודיו (נותנים לדפדפן לבחור את הקצב הטבעי שלו)
+      // 1. הגדרת AudioContext
       const ctx = new AudioContext(); 
       await ctx.resume();
       audioContextRef.current = ctx;
-      setRealSampleRate(ctx.sampleRate); // הצגה למשתמש
 
-      // 2. הכנת ההוראות למודל
-      const systemInstructionText = selectedScenario.systemInstruction
-        .replace(/SOURCE_LANG/g, nativeLang.name)
-        .replace(/TARGET_LANG/g, targetLang.name);
-
-      // 3. חיבור ל-Gemini
+      // 2. חיבור ל-Gemini (הגדרות בסיסיות ביותר כדי למנוע קריסה)
       const session = await ai.live.connect({
         model: "gemini-2.0-flash-exp",
         config: { 
-          // שימוש באובייקט parts להוראות (חשוב למניעת ניתוקים)
-          systemInstruction: { parts: [{ text: systemInstructionText }] },
+          // הוראות מפושטות
+          systemInstruction: { parts: [{ text: "You are a helpful language tutor. Be brief." }] },
           responseModalities: [Modality.AUDIO], 
-          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } }
         },
         callbacks: { 
             onopen: () => {
               console.log("Connected");
-              setDebugLog("מחובר! דבר עכשיו...");
+              setDebugLog("מחובר! שולח 'שלום'...");
               setStatus(ConnectionStatus.CONNECTED);
+              
+              // *** טריק ההתנעה: שליחת הודעת טקסט כדי להעיר את ה-AI ***
+              setTimeout(() => {
+                  if(activeSessionRef.current) {
+                    activeSessionRef.current.send({ clientContent: { turns: [{ role: 'user', parts: [{ text: "Hello, are you ready?" }] }] }, turnComplete: true });
+                  }
+              }, 500);
             },
             onmessage: () => {}, 
             onerror: (e) => {
-                console.error("Gemini Error:", e);
+                console.error("Error:", e);
                 setDebugLog("שגיאה בחיבור");
                 stopConversation();
             }, 
-            onclose: (e) => {
-                console.log("Closed by server", e);
-                setDebugLog("השיחה הסתיימה");
+            onclose: () => {
+                console.log("Closed");
+                setDebugLog("השיחה נותקה");
                 stopConversation();
             }
         }
       });
       activeSessionRef.current = session;
 
-      // 4. הפעלת מיקרופון
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-          audio: {
-              channelCount: 1,
-              echoCancellation: true,
-              autoGainControl: true,
-              noiseSuppression: true
-          } 
-      });
+      // 3. מיקרופון
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, sampleRate: 16000 } });
       micStreamRef.current = stream;
 
-      // 5. עיבוד אודיו + תיקון קצב דגימה (Resampling)
       const source = ctx.createMediaStreamSource(stream);
       const processor = ctx.createScriptProcessor(4096, 1, 1);
       processorRef.current = processor;
@@ -188,35 +160,33 @@ const App: React.FC = () => {
         for(let i=0; i<inputData.length; i+=50) sum += Math.abs(inputData[i]);
         setMicVol(Math.round(sum * 100));
 
-        if (activeSessionRef.current && activeSessionRef.current.send) {
+        if (activeSessionRef.current) {
           try {
-              // *** כאן קורה הקסם: המרה מ-48000 ל-16000 ***
-              const downsampledData = downsampleBuffer(inputData, ctx.sampleRate, 16000);
-              const pcm16 = convertFloat32ToInt16(downsampledData);
-              const base64Audio = arrayBufferToBase64(pcm16.buffer);
+              // המרה ושליחה
+              const downsampled = downsampleBuffer(inputData, ctx.sampleRate, 16000);
+              const pcm16 = convertFloat32ToInt16(downsampled);
+              const base64 = arrayBufferToBase64(pcm16.buffer);
               
               activeSessionRef.current.send({ 
                 realtimeInput: { 
-                  mediaChunks: [{ data: base64Audio, mimeType: 'audio/pcm;rate=16000' }] 
+                  mediaChunks: [{ data: base64, mimeType: 'audio/pcm;rate=16000' }] 
                 } 
               });
-          } catch(err) {
-              console.error("Send error", err);
-          }
+          } catch(err) { console.error(err); }
         }
       };
       
       source.connect(processor);
       processor.connect(ctx.destination);
 
-      // 6. קבלת תשובות
+      // 4. האזנה לתשובות
       (async () => {
         try {
           if (!session.listen) return;
           for await (const msg of session.listen()) {
             const audioData = msg.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
             if (audioData) {
-              setDebugLog("שומע תשובה..."); 
+              setDebugLog("מקבל אודיו!"); 
               setIsSpeaking(true);
               
               const binaryString = atob(audioData);
@@ -225,12 +195,9 @@ const App: React.FC = () => {
               for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
               
               const pcm16 = new Int16Array(bytes.buffer);
-              // גוגל שולח 24000 בדרך כלל
-              const audioBuffer = ctx.createBuffer(1, pcm16.length, 24000); 
+              const audioBuffer = ctx.createBuffer(1, pcm16.length, 24000);
               const channelData = audioBuffer.getChannelData(0);
-              for (let i=0; i<pcm16.length; i++) {
-                 channelData[i] = pcm16[i] / 32768.0;
-              }
+              for (let i=0; i<pcm16.length; i++) channelData[i] = pcm16[i] / 32768.0;
 
               const sourceNode = ctx.createBufferSource();
               sourceNode.buffer = audioBuffer;
@@ -243,13 +210,10 @@ const App: React.FC = () => {
               nextStartTimeRef.current = start + audioBuffer.duration;
             }
           }
-        } catch(e) { console.error("Listen error:", e); }
+        } catch(e) { console.error(e); }
       })();
       
-    } catch (e: any) { 
-      stopConversation(); 
-      alert(`שגיאה: ${e.message}`); 
-    }
+    } catch (e: any) { stopConversation(); alert(e.message); }
   };
 
   return (
@@ -257,16 +221,12 @@ const App: React.FC = () => {
       
       {/* סרגל בדיקה */}
       <div className={`w-full ${keyColor} text-white font-bold p-2 text-center text-sm flex items-center justify-center gap-4 z-50 shadow-lg`}>
-        <div className="flex items-center gap-2">
-            {keyColor.includes('green') ? <CheckCircle size={16} /> : <AlertTriangle size={16} />}
-            STATUS: {keyStatus} 
-        </div>
-        <div className="bg-black/20 px-3 py-1 rounded-full">Rate: {realSampleRate}Hz</div>
+        <div className="flex items-center gap-2"> {keyColor.includes('green') ? <CheckCircle size={16} /> : <AlertTriangle size={16} />} STATUS: {keyStatus} </div>
+        <div className="bg-black/20 px-3 py-1 rounded-full">LOG: {debugLog}</div>
         <div className="flex items-center gap-2 bg-black/20 px-3 py-1 rounded-full min-w-[80px]">
             <Activity size={16} className={micVol > 2 ? "text-green-400 animate-pulse" : "text-gray-500"} />
             <span>MIC: {micVol}</span>
         </div>
-         <div className="bg-black/20 px-3 py-1 rounded-full text-xs">LOG: {debugLog}</div>
       </div>
 
       <header className="p-4 flex items-center justify-between bg-slate-900/60 border-b border-white/5 backdrop-blur-xl shrink-0">
