@@ -1,21 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenAI, Modality } from '@google/genai';
-import { Mic, Headphones, ArrowLeftRight, AlertTriangle, CheckCircle, Square, Activity, MessageSquare } from 'lucide-react';
-import { ConnectionStatus, SUPPORTED_LANGUAGES, SCENARIOS, Language, PracticeScenario } from './types';
+import { Mic, Headphones, AlertTriangle, CheckCircle, Square, Activity, Zap } from 'lucide-react';
 import Avatar from './components/Avatar';
 import AudioVisualizer from './components/AudioVisualizer';
-import { translations } from './translations';
+
+// --- הגדרות שמע קבועות ---
+const INPUT_SAMPLE_RATE = 16000;
 
 const App: React.FC = () => {
-  const [status, setStatus] = useState<ConnectionStatus>(ConnectionStatus.DISCONNECTED);
-  const [targetLang, setTargetLang] = useState<Language>(SUPPORTED_LANGUAGES[0]);
-  const [nativeLang, setNativeLang] = useState<Language>(SUPPORTED_LANGUAGES[1]);
-  const [selectedScenario, setSelectedScenario] = useState<PracticeScenario>(SCENARIOS[0]);
+  const [status, setStatus] = useState<string>("disconnected");
   const [isSpeaking, setIsSpeaking] = useState(false);
-  
-  // דיבאג
-  const [keyStatus, setKeyStatus] = useState<string>("טוען...");
-  const [keyColor, setKeyColor] = useState<string>("bg-gray-500");
   const [debugLog, setDebugLog] = useState<string>("מוכן"); 
   const [micVol, setMicVol] = useState<number>(0);
 
@@ -25,21 +19,17 @@ const App: React.FC = () => {
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const nextStartTimeRef = useRef(0);
 
-  useEffect(() => {
-    const key = import.meta.env.VITE_API_KEY;
-    if (key && key.length > 20) {
-      setKeyStatus("המפתח תקין ✅");
-      setKeyColor("bg-green-600");
-    } else {
-      setKeyStatus("שגיאה: VITE_API_KEY חסר!");
-      setKeyColor("bg-red-600");
+  // --- פונקציות עזר לאודיו ---
+  const floatTo16BitPCM = (float32Array: Float32Array) => {
+    const buffer = new ArrayBuffer(float32Array.length * 2);
+    const view = new DataView(buffer);
+    for (let i = 0; i < float32Array.length; i++) {
+      let s = Math.max(-1, Math.min(1, float32Array[i]));
+      view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
     }
-  }, []);
+    return btoa(String.fromCharCode(...new Uint8Array(buffer)));
+  };
 
-  const t = (key: string) => translations[nativeLang.code]?.[key] || translations['en-US']?.[key] || key;
-  const dir = (nativeLang.code === 'he-IL' || nativeLang.code === 'ar-SA') ? 'rtl' : 'ltr';
-
-  // --- המרת אודיו ---
   const downsampleBuffer = (buffer: Float32Array, inputRate: number, outputRate: number) => {
     if (outputRate === inputRate) return buffer;
     const sampleRateRatio = inputRate / outputRate;
@@ -57,26 +47,7 @@ const App: React.FC = () => {
     }
     return result;
   };
-
-  const convertFloat32ToInt16 = (buffer: Float32Array) => {
-    let l = buffer.length;
-    const buf = new Int16Array(l);
-    while (l--) {
-      buf[l] = Math.min(1, Math.max(-1, buffer[l])) * 0x7FFF;
-    }
-    return buf;
-  };
-
-  const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
-    let binary = '';
-    const bytes = new Uint8Array(buffer);
-    const len = bytes.byteLength;
-    for (let i = 0; i < len; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return window.btoa(binary);
-  };
-  // -------------------
+  // ---------------------------
 
   const stopConversation = useCallback(() => {
     console.log("Stopping...");
@@ -84,68 +55,75 @@ const App: React.FC = () => {
     if (micStreamRef.current) { micStreamRef.current.getTracks().forEach(track => track.stop()); micStreamRef.current = null; }
     if (processorRef.current) { processorRef.current.disconnect(); processorRef.current = null; }
     if (audioContextRef.current) { audioContextRef.current.close(); audioContextRef.current = null; }
-    setStatus(ConnectionStatus.DISCONNECTED);
+    setStatus("disconnected");
     setIsSpeaking(false);
-    setDebugLog("מנותק.");
+    setDebugLog("מנותק");
     setMicVol(0);
   }, []);
 
   const startConversation = async () => {
     let apiKey = import.meta.env.VITE_API_KEY || "";
     apiKey = apiKey.trim().replace(/['"]/g, '');
-
-    if (!apiKey) return alert("המפתח חסר.");
+    if (!apiKey) return alert("חסר API KEY");
 
     try {
       stopConversation();
-      setStatus(ConnectionStatus.CONNECTING);
+      setStatus("connecting");
       setDebugLog("מתחבר...");
 
-      const ai = new GoogleGenAI({ apiKey: apiKey });
-      
-      // 1. הגדרת AudioContext
+      // 1. אתחול מנוע אודיו (חייב לקרות בלחיצה!)
       const ctx = new AudioContext(); 
-      await ctx.resume();
+      await ctx.resume(); // קריטי ל-Autoplay Policy
       audioContextRef.current = ctx;
 
-      // 2. חיבור ל-Gemini (הגדרות בסיסיות ביותר כדי למנוע קריסה)
+      // 2. חיבור ל-Gemini
+      const ai = new GoogleGenAI({ apiKey: apiKey });
       const session = await ai.live.connect({
         model: "gemini-2.0-flash-exp",
         config: { 
-          // הוראות מפושטות
-          systemInstruction: { parts: [{ text: "You are a helpful language tutor. Be brief." }] },
-          responseModalities: [Modality.AUDIO], 
+          // פישוט מקסימלי של ההוראות למניעת קריסה
+          systemInstruction: { parts: [{ text: "You are a helpful assistant. Speak briefly." }] },
+          responseModalities: [Modality.AUDIO], // חובה!
         },
         callbacks: { 
             onopen: () => {
-              console.log("Connected");
-              setDebugLog("מחובר! שולח 'שלום'...");
-              setStatus(ConnectionStatus.CONNECTED);
+              console.log("Connected!");
+              setDebugLog("מחובר! מבצע התנעה...");
+              setStatus("connected");
               
-              // *** טריק ההתנעה: שליחת הודעת טקסט כדי להעיר את ה-AI ***
+              // *** התיקון הקריטי: בעיטה (Kickstart) ***
+              // שולח הודעה ראשונה כדי להכריח את השרת לשלוח אודיו בחזרה
               setTimeout(() => {
-                  if(activeSessionRef.current) {
-                    activeSessionRef.current.send({ clientContent: { turns: [{ role: 'user', parts: [{ text: "Hello, are you ready?" }] }] }, turnComplete: true });
-                  }
+                if(activeSessionRef.current) {
+                    activeSessionRef.current.send({ 
+                        clientContent: { 
+                            turns: [{ role: 'user', parts: [{ text: "Hello! Can you hear me?" }] }] 
+                        }, 
+                        turnComplete: true 
+                    });
+                    setDebugLog("נשלח סיגנל התחלה");
+                }
               }, 500);
             },
             onmessage: () => {}, 
             onerror: (e) => {
                 console.error("Error:", e);
-                setDebugLog("שגיאה בחיבור");
+                setDebugLog("שגיאת שרת: " + e.message);
                 stopConversation();
             }, 
-            onclose: () => {
-                console.log("Closed");
-                setDebugLog("השיחה נותקה");
+            onclose: (e) => {
+                console.log("Closed:", e);
+                setDebugLog("השרת סגר את החיבור");
                 stopConversation();
             }
         }
       });
       activeSessionRef.current = session;
 
-      // 3. מיקרופון
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, sampleRate: 16000 } });
+      // 3. חיבור מיקרופון
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+          audio: { channelCount: 1, sampleRate: INPUT_SAMPLE_RATE } 
+      });
       micStreamRef.current = stream;
 
       const source = ctx.createMediaStreamSource(stream);
@@ -161,41 +139,38 @@ const App: React.FC = () => {
         setMicVol(Math.round(sum * 100));
 
         if (activeSessionRef.current) {
-          try {
-              // המרה ושליחה
-              const downsampled = downsampleBuffer(inputData, ctx.sampleRate, 16000);
-              const pcm16 = convertFloat32ToInt16(downsampled);
-              const base64 = arrayBufferToBase64(pcm16.buffer);
-              
-              activeSessionRef.current.send({ 
-                realtimeInput: { 
-                  mediaChunks: [{ data: base64, mimeType: 'audio/pcm;rate=16000' }] 
-                } 
-              });
-          } catch(err) { console.error(err); }
+          // המרה ידנית ל-16k בטוח
+          const downsampled = downsampleBuffer(inputData, ctx.sampleRate, INPUT_SAMPLE_RATE);
+          const pcm16 = floatTo16BitPCM(downsampled);
+          
+          activeSessionRef.current.send({ 
+            realtimeInput: { 
+              mediaChunks: [{ data: pcm16, mimeType: 'audio/pcm;rate=16000' }] 
+            } 
+          });
         }
       };
       
       source.connect(processor);
       processor.connect(ctx.destination);
 
-      // 4. האזנה לתשובות
+      // 4. האזנה לתשובות (Playback)
       (async () => {
         try {
           if (!session.listen) return;
           for await (const msg of session.listen()) {
-            const audioData = msg.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-            if (audioData) {
-              setDebugLog("מקבל אודיו!"); 
+            if (msg.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data) {
+              setDebugLog("🔊 מתקבל אודיו!"); 
               setIsSpeaking(true);
               
+              const audioData = msg.serverContent.modelTurn.parts[0].inlineData.data;
               const binaryString = atob(audioData);
               const len = binaryString.length;
               const bytes = new Uint8Array(len);
               for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
               
               const pcm16 = new Int16Array(bytes.buffer);
-              const audioBuffer = ctx.createBuffer(1, pcm16.length, 24000);
+              const audioBuffer = ctx.createBuffer(1, pcm16.length, 24000); // ברירת מחדל של גוגל
               const channelData = audioBuffer.getChannelData(0);
               for (let i=0; i<pcm16.length; i++) channelData[i] = pcm16[i] / 32768.0;
 
@@ -203,11 +178,8 @@ const App: React.FC = () => {
               sourceNode.buffer = audioBuffer;
               sourceNode.connect(ctx.destination);
               sourceNode.onended = () => setIsSpeaking(false);
-              
-              const now = ctx.currentTime;
-              const start = Math.max(nextStartTimeRef.current, now);
-              sourceNode.start(start);
-              nextStartTimeRef.current = start + audioBuffer.duration;
+              sourceNode.start(Math.max(nextStartTimeRef.current, ctx.currentTime));
+              nextStartTimeRef.current = Math.max(nextStartTimeRef.current, ctx.currentTime) + audioBuffer.duration;
             }
           }
         } catch(e) { console.error(e); }
@@ -217,61 +189,54 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className={`h-screen bg-slate-950 flex flex-col text-slate-200 overflow-hidden font-['Inter'] ${dir}`} dir={dir}>
+    <div className="h-screen bg-slate-950 flex flex-col items-center justify-center text-white font-sans p-4">
       
-      {/* סרגל בדיקה */}
-      <div className={`w-full ${keyColor} text-white font-bold p-2 text-center text-sm flex items-center justify-center gap-4 z-50 shadow-lg`}>
-        <div className="flex items-center gap-2"> {keyColor.includes('green') ? <CheckCircle size={16} /> : <AlertTriangle size={16} />} STATUS: {keyStatus} </div>
-        <div className="bg-black/20 px-3 py-1 rounded-full">LOG: {debugLog}</div>
-        <div className="flex items-center gap-2 bg-black/20 px-3 py-1 rounded-full min-w-[80px]">
-            <Activity size={16} className={micVol > 2 ? "text-green-400 animate-pulse" : "text-gray-500"} />
-            <span>MIC: {micVol}</span>
+      {/* לוג ומצב */}
+      <div className="absolute top-4 w-full max-w-md bg-slate-900/80 p-4 rounded-xl border border-white/10 text-center shadow-xl backdrop-blur-md">
+        <div className="flex items-center justify-center gap-3 mb-2">
+            {status === "connected" ? <CheckCircle className="text-green-500" /> : <AlertTriangle className="text-amber-500" />}
+            <span className="font-bold uppercase tracking-wider text-sm">{status}</span>
+        </div>
+        <div className="bg-black/40 rounded px-2 py-1 text-xs font-mono text-cyan-300 mb-2">
+            LOG: {debugLog}
+        </div>
+        <div className="flex items-center justify-center gap-2">
+            <Activity size={16} className={micVol > 2 ? "text-green-400 animate-pulse" : "text-slate-600"} />
+            <div className="w-32 h-2 bg-slate-700 rounded-full overflow-hidden">
+                <div className="h-full bg-green-500 transition-all duration-75" style={{ width: `${Math.min(micVol, 100)}%` }} />
+            </div>
         </div>
       </div>
 
-      <header className="p-4 flex items-center justify-between bg-slate-900/60 border-b border-white/5 backdrop-blur-xl shrink-0">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-indigo-600 rounded flex items-center justify-center shadow-lg"><Headphones size={20} /></div>
-          <span className="font-black text-xl uppercase tracking-tighter">LingoLive Pro</span>
-        </div>
-      </header>
-
-      <main className="flex-1 flex flex-col md:flex-row overflow-hidden">
-        <div className="w-full md:w-[400px] flex flex-col p-4 gap-4 bg-slate-900/30 border-r border-white/5 shadow-2xl overflow-y-auto">
-          <div className="bg-slate-900/90 rounded-[2rem] border border-white/10 p-6 flex flex-col gap-4">
-            <div className="bg-slate-800/40 p-4 rounded-2xl border border-white/5 flex items-center gap-3">
-                <select value={nativeLang.code} onChange={e => setNativeLang(SUPPORTED_LANGUAGES.find(l => l.code === e.target.value)!)} className="bg-slate-900 border border-white/10 rounded-xl px-4 py-4 text-sm font-bold w-full text-center">{SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}</select>
-                <ArrowLeftRight size={20} className="text-indigo-500 shrink-0" />
-                <select value={targetLang.code} onChange={e => setTargetLang(SUPPORTED_LANGUAGES.find(l => l.code === e.target.value)!)} className="bg-slate-900 border border-white/10 rounded-xl px-4 py-4 text-sm font-bold w-full text-center">{SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}</select>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              {SCENARIOS.map(s => (
-                <button key={s.id} onClick={() => setSelectedScenario(s)} className={`py-6 rounded-3xl flex flex-col items-center gap-2 transition-all ${selectedScenario.id === s.id ? 'bg-indigo-600 text-white shadow-xl scale-105' : 'bg-slate-800/40 text-slate-500'}`}>
-                  <span className="text-3xl">{s.icon}</span>
-                  <span className="text-xs font-black uppercase tracking-widest">{t(s.title)}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex flex-col items-center py-4 flex-1 justify-center relative min-h-[300px]">
-            <Avatar state={status === ConnectionStatus.CONNECTED ? (isSpeaking ? 'speaking' : 'listening') : 'idle'} />
-            
+      {/* אזור ראשי */}
+      <div className="relative">
+        <Avatar state={status === "connected" ? (isSpeaking ? 'speaking' : 'listening') : 'idle'} />
+        
+        {/* כפתור ראשי */}
+        <div className="absolute -bottom-24 left-1/2 -translate-x-1/2 w-full flex justify-center">
             <button 
-                onClick={status === ConnectionStatus.CONNECTED ? stopConversation : startConversation} 
-                className={`mt-8 px-12 py-5 rounded-full font-black text-2xl shadow-2xl flex items-center gap-4 transition-all active:scale-95 z-20 relative ${status === ConnectionStatus.CONNECTED ? 'bg-red-500 hover:bg-red-600' : 'bg-indigo-600 shadow-indigo-600/30 hover:bg-indigo-500'}`}
+                onClick={status === "connected" ? stopConversation : startConversation}
+                className={`flex items-center gap-3 px-8 py-4 rounded-full font-bold text-xl shadow-2xl transition-all active:scale-95 ${
+                    status === "connected" 
+                    ? 'bg-red-500 hover:bg-red-600 shadow-red-500/20' 
+                    : 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-500/30'
+                }`}
             >
-                {status === ConnectionStatus.CONNECTED ? <><Square size={24} fill="currentColor" /> {t('stop_conversation')}</> : <><Mic size={28} /> {t('start_conversation')}</>}
+                {status === "connected" ? (
+                    <> <Square fill="currentColor" size={20} /> Stop </>
+                ) : (
+                    <> <Mic size={24} /> Start Conversation </>
+                )}
             </button>
-
-            {(isSpeaking || status === ConnectionStatus.CONNECTED) && 
-             <div className="absolute bottom-8 w-full px-12 z-10 pointer-events-none">
-                <AudioVisualizer isActive={true} color={isSpeaking ? "#6366f1" : "#10b981"} />
-             </div>
-            }
-          </div>
         </div>
-      </main>
+      </div>
+
+      {/* ויזואליזציה */}
+      {(status === "connected") && (
+         <div className="fixed bottom-0 w-full h-32 pointer-events-none opacity-50">
+            <AudioVisualizer isActive={true} color={isSpeaking ? "#a78bfa" : "#34d399"} />
+         </div>
+      )}
     </div>
   );
 };
