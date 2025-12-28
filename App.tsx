@@ -1,10 +1,11 @@
+
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenAI, Modality } from '@google/genai';
-import { Mic, Headphones, AlertTriangle, CheckCircle, Square, Activity, Zap } from 'lucide-react';
+import { Mic, Headphones, AlertTriangle, CheckCircle, Square, Activity, Zap, RefreshCw } from 'lucide-react';
 import Avatar from './components/Avatar';
 import AudioVisualizer from './components/AudioVisualizer';
 
-// --- הגדרות שמע קבועות ---
+// הגדרות קבועות
 const INPUT_SAMPLE_RATE = 16000;
 
 const App: React.FC = () => {
@@ -19,7 +20,7 @@ const App: React.FC = () => {
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const nextStartTimeRef = useRef(0);
 
-  // --- פונקציות עזר לאודיו ---
+  // --- עזרי אודיו ---
   const floatTo16BitPCM = (float32Array: Float32Array) => {
     const buffer = new ArrayBuffer(float32Array.length * 2);
     const view = new DataView(buffer);
@@ -47,18 +48,37 @@ const App: React.FC = () => {
     }
     return result;
   };
-  // ---------------------------
+  // -------------------
 
   const stopConversation = useCallback(() => {
-    console.log("Stopping...");
-    if (activeSessionRef.current) { try { activeSessionRef.current.close(); } catch (e) {} activeSessionRef.current = null; }
-    if (micStreamRef.current) { micStreamRef.current.getTracks().forEach(track => track.stop()); micStreamRef.current = null; }
-    if (processorRef.current) { processorRef.current.disconnect(); processorRef.current = null; }
-    if (audioContextRef.current) { audioContextRef.current.close(); audioContextRef.current = null; }
+    console.log("Stopping conversation cleanup...");
+    
+    // ניתוק המעבד קודם כל כדי למנוע את השגיאה Uncaught TypeError
+    if (processorRef.current) {
+        processorRef.current.disconnect();
+        processorRef.current.onaudioprocess = null; // ביטול הפונקציה
+        processorRef.current = null;
+    }
+
+    if (activeSessionRef.current) { 
+        try { activeSessionRef.current.close(); } catch (e) {} 
+        activeSessionRef.current = null; 
+    }
+
+    if (micStreamRef.current) { 
+        micStreamRef.current.getTracks().forEach(track => track.stop()); 
+        micStreamRef.current = null; 
+    }
+
+    if (audioContextRef.current) { 
+        audioContextRef.current.close(); 
+        audioContextRef.current = null; 
+    }
+
     setStatus("disconnected");
     setIsSpeaking(false);
-    setDebugLog("מנותק");
     setMicVol(0);
+    setDebugLog("מנותק (ניקוי בוצע)");
   }, []);
 
   const startConversation = async () => {
@@ -67,62 +87,59 @@ const App: React.FC = () => {
     if (!apiKey) return alert("חסר API KEY");
 
     try {
-      stopConversation();
+      stopConversation(); // ניקוי יסודי לפני התחלה
       setStatus("connecting");
       setDebugLog("מתחבר...");
 
-      // 1. אתחול מנוע אודיו (חייב לקרות בלחיצה!)
       const ctx = new AudioContext(); 
-      await ctx.resume(); // קריטי ל-Autoplay Policy
+      await ctx.resume(); 
       audioContextRef.current = ctx;
 
-      // 2. חיבור ל-Gemini
       const ai = new GoogleGenAI({ apiKey: apiKey });
+      
       const session = await ai.live.connect({
         model: "gemini-2.0-flash-exp",
         config: { 
-          // פישוט מקסימלי של ההוראות למניעת קריסה
-          systemInstruction: { parts: [{ text: "You are a helpful assistant. Speak briefly." }] },
-          responseModalities: [Modality.AUDIO], // חובה!
+          // הגדרה מינימלית
+          responseModalities: [Modality.AUDIO],
         },
         callbacks: { 
             onopen: () => {
-              console.log("Connected!");
-              setDebugLog("מחובר! מבצע התנעה...");
+              console.log("Connected");
+              setDebugLog("מחובר! (ממתין לדיבור)");
               setStatus("connected");
               
-              // *** התיקון הקריטי: בעיטה (Kickstart) ***
-              // שולח הודעה ראשונה כדי להכריח את השרת לשלוח אודיו בחזרה
+              // שליחת הודעת 'התנעה' שקטה אחרי שנייה
               setTimeout(() => {
                 if(activeSessionRef.current) {
-                    activeSessionRef.current.send({ 
-                        clientContent: { 
-                            turns: [{ role: 'user', parts: [{ text: "Hello! Can you hear me?" }] }] 
-                        }, 
-                        turnComplete: true 
-                    });
-                    setDebugLog("נשלח סיגנל התחלה");
+                    try {
+                        activeSessionRef.current.send({ 
+                            clientContent: { turns: [{ role: 'user', parts: [{ text: "Hello" }] }] }, 
+                            turnComplete: true 
+                        });
+                    } catch(e) { console.log("Kickstart failed", e); }
                 }
-              }, 500);
+              }, 1000);
             },
             onmessage: () => {}, 
             onerror: (e) => {
-                console.error("Error:", e);
-                setDebugLog("שגיאת שרת: " + e.message);
+                console.error("Server Error:", e);
+                setDebugLog("שגיאה מהשרת: " + e.message);
                 stopConversation();
             }, 
             onclose: (e) => {
-                console.log("Closed:", e);
-                setDebugLog("השרת סגר את החיבור");
+                console.log("Closed by server", e);
+                setDebugLog("השרת ניתק את השיחה");
                 stopConversation();
             }
         }
       });
+      
       activeSessionRef.current = session;
 
-      // 3. חיבור מיקרופון
+      // חיבור מיקרופון
       const stream = await navigator.mediaDevices.getUserMedia({ 
-          audio: { channelCount: 1, sampleRate: INPUT_SAMPLE_RATE } 
+          audio: { channelCount: 1, sampleRate: 16000 } 
       });
       micStreamRef.current = stream;
 
@@ -131,6 +148,10 @@ const App: React.FC = () => {
       processorRef.current = processor;
 
       processor.onaudioprocess = (e) => {
+        // --- ההגנה שמונעת את הקריסה ---
+        if (!activeSessionRef.current) return; 
+        // ---------------------------------
+
         const inputData = e.inputBuffer.getChannelData(0);
         
         // מד ווליום
@@ -138,29 +159,35 @@ const App: React.FC = () => {
         for(let i=0; i<inputData.length; i+=50) sum += Math.abs(inputData[i]);
         setMicVol(Math.round(sum * 100));
 
-        if (activeSessionRef.current) {
-          // המרה ידנית ל-16k בטוח
-          const downsampled = downsampleBuffer(inputData, ctx.sampleRate, INPUT_SAMPLE_RATE);
+        try {
+          // המרה ושליחה
+          const downsampled = downsampleBuffer(inputData, ctx.sampleRate, 16000);
           const pcm16 = floatTo16BitPCM(downsampled);
           
-          activeSessionRef.current.send({ 
-            realtimeInput: { 
-              mediaChunks: [{ data: pcm16, mimeType: 'audio/pcm;rate=16000' }] 
-            } 
-          });
+          // בדיקה נוספת לפני שליחה
+          if (activeSessionRef.current) {
+             activeSessionRef.current.send({ 
+                realtimeInput: { 
+                  mediaChunks: [{ data: pcm16, mimeType: 'audio/pcm;rate=16000' }] 
+                } 
+             });
+          }
+        } catch(err) {
+            // התעלמות משגיאות שליחה כדי לא לתקוע את התוכנה
+            console.warn("Send skipped");
         }
       };
       
       source.connect(processor);
       processor.connect(ctx.destination);
 
-      // 4. האזנה לתשובות (Playback)
+      // השמעת תשובות
       (async () => {
         try {
           if (!session.listen) return;
           for await (const msg of session.listen()) {
             if (msg.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data) {
-              setDebugLog("🔊 מתקבל אודיו!"); 
+              setDebugLog("🔊 שומע תשובה..."); 
               setIsSpeaking(true);
               
               const audioData = msg.serverContent.modelTurn.parts[0].inlineData.data;
@@ -170,7 +197,7 @@ const App: React.FC = () => {
               for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
               
               const pcm16 = new Int16Array(bytes.buffer);
-              const audioBuffer = ctx.createBuffer(1, pcm16.length, 24000); // ברירת מחדל של גוגל
+              const audioBuffer = ctx.createBuffer(1, pcm16.length, 24000);
               const channelData = audioBuffer.getChannelData(0);
               for (let i=0; i<pcm16.length; i++) channelData[i] = pcm16[i] / 32768.0;
 
@@ -182,7 +209,7 @@ const App: React.FC = () => {
               nextStartTimeRef.current = Math.max(nextStartTimeRef.current, ctx.currentTime) + audioBuffer.duration;
             }
           }
-        } catch(e) { console.error(e); }
+        } catch(e) { console.error("Listen Loop Error:", e); }
       })();
       
     } catch (e: any) { stopConversation(); alert(e.message); }
@@ -190,7 +217,6 @@ const App: React.FC = () => {
 
   return (
     <div className="h-screen bg-slate-950 flex flex-col items-center justify-center text-white font-sans p-4">
-      
       {/* לוג ומצב */}
       <div className="absolute top-4 w-full max-w-md bg-slate-900/80 p-4 rounded-xl border border-white/10 text-center shadow-xl backdrop-blur-md">
         <div className="flex items-center justify-center gap-3 mb-2">
@@ -208,11 +234,9 @@ const App: React.FC = () => {
         </div>
       </div>
 
-      {/* אזור ראשי */}
       <div className="relative">
         <Avatar state={status === "connected" ? (isSpeaking ? 'speaking' : 'listening') : 'idle'} />
         
-        {/* כפתור ראשי */}
         <div className="absolute -bottom-24 left-1/2 -translate-x-1/2 w-full flex justify-center">
             <button 
                 onClick={status === "connected" ? stopConversation : startConversation}
@@ -225,13 +249,12 @@ const App: React.FC = () => {
                 {status === "connected" ? (
                     <> <Square fill="currentColor" size={20} /> Stop </>
                 ) : (
-                    <> <Mic size={24} /> Start Conversation </>
+                    <> <Mic size={24} /> Start </>
                 )}
             </button>
         </div>
       </div>
 
-      {/* ויזואליזציה */}
       {(status === "connected") && (
          <div className="fixed bottom-0 w-full h-32 pointer-events-none opacity-50">
             <AudioVisualizer isActive={true} color={isSpeaking ? "#a78bfa" : "#34d399"} />
