@@ -47,14 +47,10 @@ const App: React.FC = () => {
   const startConversation = async () => {
     // 1. שליפת המפתח
     let apiKey = import.meta.env.VITE_API_KEY || "";
-
-    // 2. ניקוי אגרסיבי של המפתח (מסיר רווחים, מרכאות ושטויות)
-    apiKey = apiKey.trim().replace(/['"]/g, '');
-
-    console.log("Using API Key (First 5 chars):", apiKey.substring(0, 5) + "...");
+    apiKey = apiKey.trim().replace(/['"]/g, ''); // ניקוי
 
     if (!apiKey) {
-      alert("שגיאה: המפתח ריק אחרי ניקוי. בדוק את Vercel.");
+      alert("שגיאה: המפתח לא נמצא.");
       return;
     }
 
@@ -62,8 +58,11 @@ const App: React.FC = () => {
       stopConversation();
       setStatus(ConnectionStatus.CONNECTING);
 
-      // 3. יצירת החיבור עם המפתח הנקי
-      const ai = new GoogleGenAI(apiKey);
+      // ************************************************************************
+      // התיקון הקריטי: העברת המפתח כאובייקט { apiKey: ... }
+      // זה מה שפותר את השגיאה "API Key must be set"
+      // ************************************************************************
+      const ai = new GoogleGenAI({ apiKey: apiKey });
       
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       micStreamRef.current = stream;
@@ -84,7 +83,7 @@ const App: React.FC = () => {
             onmessage: () => {}, 
             onerror: (e) => {
                 console.error("Gemini Error:", e);
-                alert("שגיאת חיבור! (בדוק ב-F12 Console לפרטים נוספים)");
+                alert("שגיאת חיבור לגוגל (בדוק Console לפרטים)");
                 stopConversation();
             }, 
             onclose: () => console.log("Closed") 
