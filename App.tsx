@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenAI, Modality } from '@google/genai';
 import { Mic, Headphones, ArrowLeftRight } from 'lucide-react';
 import { ConnectionStatus, SUPPORTED_LANGUAGES, SCENARIOS, Language, PracticeScenario } from './types';
@@ -13,12 +13,23 @@ const App: React.FC = () => {
   const [nativeLang, setNativeLang] = useState<Language>(SUPPORTED_LANGUAGES[1]);
   const [selectedScenario, setSelectedScenario] = useState<PracticeScenario>(SCENARIOS[0]);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [keyStatus, setKeyStatus] = useState<string>("BODEK..."); // בדיקה
 
   const activeSessionRef = useRef<any>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
   const inputAudioContextRef = useRef<AudioContext | null>(null);
   const outputAudioContextRef = useRef<AudioContext | null>(null);
   const nextStartTimeRef = useRef(0);
+
+  // בדיקה האם המפתח נטען
+  useEffect(() => {
+    const key = import.meta.env.VITE_API_KEY;
+    if (key && key.length > 10) {
+      setKeyStatus("KEY LOADED ✅");
+    } else {
+      setKeyStatus("KEY MISSING ❌");
+    }
+  }, []);
 
   const t = (key: string) => translations[nativeLang.code]?.[key] || translations['en-US']?.[key] || key;
   const dir = (nativeLang.code === 'he-IL' || nativeLang.code === 'ar-SA') ? 'rtl' : 'ltr';
@@ -31,11 +42,11 @@ const App: React.FC = () => {
   }, []);
 
   const startConversation = async () => {
-    // שליפת המפתח בצורה מאובטחת ממשתני הסביבה
+    // שליפת המפתח
     const apiKey = import.meta.env.VITE_API_KEY;
 
     if (!apiKey) {
-      alert("API Key is missing! Please set VITE_API_KEY in your Vercel settings.");
+      alert("שגיאה: האתר לא מוצא את המפתח בהגדרות Vercel. וודא ששם המשתנה הוא VITE_API_KEY");
       return;
     }
 
@@ -104,6 +115,11 @@ const App: React.FC = () => {
 
   return (
     <div className={`h-screen bg-slate-950 flex flex-col text-slate-200 overflow-hidden font-['Inter'] ${dir}`} dir={dir}>
+      {/* דיבאג - מציג סטטוס מפתח */}
+      <div className="absolute top-0 left-0 bg-white text-black text-xs p-1 font-bold z-50">
+        STATUS: {keyStatus}
+      </div>
+
       <header className="p-4 flex items-center justify-between bg-slate-900/60 border-b border-white/5 backdrop-blur-xl shrink-0">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 bg-indigo-600 rounded flex items-center justify-center shadow-lg"><Headphones size={20} /></div>
