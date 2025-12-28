@@ -1,45 +1,24 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { Mic, Activity, Square, Play, Volume2, Radio } from 'lucide-react';
+import { Mic, Activity, Square, Play, Radio } from 'lucide-react';
 import Avatar from './components/Avatar';
 import AudioVisualizer from './components/AudioVisualizer';
 
 const App: React.FC = () => {
-  // סטטוסים מופרדים לשליטה מלאה
+  // ניהול מצבים ידני
   const [connectionStatus, setConnectionStatus] = useState<"disconnected" | "connected">("disconnected");
   const [isMicActive, setIsMicActive] = useState(false);
   const [debugLog, setDebugLog] = useState<string>("ממתין לפקודה..."); 
   const [micVol, setMicVol] = useState<number>(0);
   const [aiSpeaking, setAiSpeaking] = useState(false);
 
-  // Refs
+  // משאבים
   const sessionRef = useRef<any>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // 1. ניתוק וניקוי
-  const disconnect = useCallback(async () => {
-    console.log("Disconnecting...");
-    setDebugLog("מתנתק...");
-    
-    // עצירת אודיו
-    if (processorRef.current) { processorRef.current.disconnect(); processorRef.current = null; }
-    if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
-    if (audioContextRef.current) { await audioContextRef.current.close(); audioContextRef.current = null; }
-
-    // סגירת סשן
-    if (sessionRef.current) {
-        try { await sessionRef.current.close(); } catch(e) { console.warn(e); }
-        sessionRef.current = null;
-    }
-
-    setConnectionStatus("disconnected");
-    setIsMicActive(false);
-    setDebugLog("מנותק.");
-  }, []);
-
-  // 2. שלב ראשון: חיבור בלבד (ללא אודיו, ללא Hello)
+  // --- 1. פונקציית התחברות (ללא אודיו, ללא שליחת הודעות) ---
   const connectToGoogle = async () => {
     let apiKey = import.meta.env.VITE_API_KEY || "";
     apiKey = apiKey.trim().replace(/['"]/g, '');
@@ -47,7 +26,6 @@ const App: React.FC = () => {
 
     try {
       setDebugLog("מתחבר לשרת...");
-
       const client = new GoogleGenAI({ apiKey });
       
       const session = await client.live.connect({
@@ -57,9 +35,10 @@ const App: React.FC = () => {
         },
         callbacks: {
             onOpen: () => {
-                console.log("Socket Opened");
+                console.log(">> Connected!");
                 setConnectionStatus("connected");
-                setDebugLog("✅ מחובר! (שלב 1 עבר בהצלחה)");
+                setDebugLog("✅ מחובר! (המתן...)");
+                // לא שולחים כלום כאן!
             },
             onMessage: (msg: any) => {
                 const parts = msg.serverContent?.modelTurn?.parts || [];
@@ -72,14 +51,14 @@ const App: React.FC = () => {
                 }
             },
             onClose: (e: any) => {
-                console.log("Close:", e);
+                console.log(">> Closed:", e);
                 setConnectionStatus("disconnected");
                 setIsMicActive(false);
                 setDebugLog(`השרת ניתק (קוד ${e.code})`);
             },
             onError: (e: any) => {
-                console.error("Error:", e);
-                setDebugLog("שגיאה (לא מנתק!)");
+                console.error(">> Error:", e);
+                setDebugLog("שגיאה (לא מתנתק)");
             }
         }
       });
@@ -93,7 +72,7 @@ const App: React.FC = () => {
     }
   };
 
-  // 3. שלב שני: הפעלת מיקרופון ידנית
+  // --- 2. פונקציית מיקרופון (רק לאחר חיבור) ---
   const startMicrophoneStream = async () => {
       if (!sessionRef.current) return alert("קודם תתחבר!");
       if (isMicActive) return;
@@ -101,7 +80,7 @@ const App: React.FC = () => {
       try {
           setDebugLog("מפעיל מיקרופון...");
           
-          // כופה 16kHz כדי למנוע בעיות תדרים
+          // כפיית קצב דגימה 16kHz
           const ctx = new window.AudioContext({ sampleRate: 16000 });
           await ctx.resume();
           audioContextRef.current = ctx;
@@ -127,7 +106,7 @@ const App: React.FC = () => {
               for (let i = 0; i < inputData.length; i += 50) sum += Math.abs(inputData[i]);
               setMicVol(Math.round(sum * 100));
 
-              // שליחה ידנית
+              // שליחה
               if (sessionRef.current) {
                   const pcm16 = floatTo16BitPCM(inputData);
                   try {
@@ -137,9 +116,7 @@ const App: React.FC = () => {
                               data: pcm16
                           }]
                       });
-                  } catch (err) {
-                      console.error("Send Error", err);
-                  }
+                  } catch (err) { console.error(err); }
               }
           };
 
@@ -147,22 +124,41 @@ const App: React.FC = () => {
           processor.connect(ctx.destination);
           
           setIsMicActive(true);
-          setDebugLog("🎤 מיקרופון פעיל ומזרים...");
+          setDebugLog("🎤 מיקרופון פעיל");
 
       } catch (e: any) {
           setDebugLog("שגיאת מיקרופון: " + e.message);
       }
   };
 
-  // 4. שלב שלישי: סיום תור ידני (למקרה שה-AI שותק)
+  // --- 3. שליחת סיום תור ידנית ---
   const sendEndTurn = () => {
       if (sessionRef.current) {
-          setDebugLog("שולח פקודת סיום...");
+          setDebugLog("שולח סימן סיום...");
           sessionRef.current.sendClientContent({ turns: [], turnComplete: true });
       }
   };
 
-  // --- Helpers ---
+  // --- 4. ניתוק ---
+  const disconnect = useCallback(async () => {
+    console.log(">> User Disconnecting...");
+    setDebugLog("מתנתק...");
+    
+    if (processorRef.current) { processorRef.current.disconnect(); processorRef.current = null; }
+    if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
+    if (audioContextRef.current) { await audioContextRef.current.close(); audioContextRef.current = null; }
+
+    if (sessionRef.current) {
+        try { await sessionRef.current.close(); } catch(e) {}
+        sessionRef.current = null;
+    }
+
+    setConnectionStatus("disconnected");
+    setIsMicActive(false);
+    setDebugLog("מנותק.");
+  }, []);
+
+  // --- עזרים ---
   const floatTo16BitPCM = (float32Array: Float32Array) => {
     const buffer = new ArrayBuffer(float32Array.length * 2);
     const view = new DataView(buffer);
@@ -215,7 +211,7 @@ const App: React.FC = () => {
       <div className="relative flex flex-col items-center gap-6">
         <Avatar state={aiSpeaking ? 'speaking' : (isMicActive ? 'listening' : 'idle')} />
         
-        {/* כפתורי שליטה ידניים - כדי לראות איפה זה קורס */}
+        {/* כפתורי שליטה ידניים */}
         <div className="flex flex-wrap justify-center gap-4 w-full max-w-2xl z-10">
             {connectionStatus === "disconnected" ? (
                 <button 
