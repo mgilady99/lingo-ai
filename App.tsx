@@ -6,8 +6,8 @@ import AudioVisualizer from './components/AudioVisualizer';
 
 const App: React.FC = () => {
   const [status, setStatus] = useState<string>("disconnected");
-  const [isSpeaking, setIsSpeaking] = useState(false); // ה-AI מדבר
-  const [isUserTalking, setIsUserTalking] = useState(false); // המשתמש מדבר
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isUserTalking, setIsUserTalking] = useState(false);
   const [debugLog, setDebugLog] = useState<string>("מוכן"); 
   const [micVol, setMicVol] = useState<number>(0);
 
@@ -16,7 +16,6 @@ const App: React.FC = () => {
   const audioContextRef = useRef<AudioContext | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   
-  // משתנים לזיהוי שתיקה
   const lastVoiceTimeRef = useRef<number>(0);
   const silenceTriggeredRef = useRef<boolean>(false);
 
@@ -49,7 +48,7 @@ const App: React.FC = () => {
     return result;
   };
 
-  // --- שליחה בטוחה (מונעת קריסות) ---
+  // --- שליחה בטוחה ---
   const safeSend = (data: any) => {
       const s = activeSessionRef.current;
       if (!s) return;
@@ -57,8 +56,7 @@ const App: React.FC = () => {
           if (typeof s.send === 'function') s.send(data);
           else if (typeof s.sendRealtimeInput === 'function' && data.realtimeInput) s.sendRealtimeInput(data.realtimeInput);
           else if (typeof s.sendClientContent === 'function' && data.clientContent) s.sendClientContent(data.clientContent);
-          else console.warn("No send function found");
-      } catch (e) { console.error("Send error", e); }
+      } catch (e) { console.error(e); }
   };
 
   const stopConversation = useCallback(() => {
@@ -90,36 +88,42 @@ const App: React.FC = () => {
 
       const ai = new GoogleGenAI({ apiKey: apiKey });
       
-      // חיבור עם תמיכה בשמות Callback שונים
+      // הגדרת הפונקציות גם בקטן וגם בגדול למניעת קריסה
+      const eventHandlers = {
+          onopen: () => { 
+              console.log("Connected");
+              setStatus("connected");
+              setDebugLog("מחובר!");
+              setTimeout(() => safeSend({ clientContent: { turns: [{ role: 'user', parts: [{ text: "Hello" }] }] }, turnComplete: true }), 1000);
+          },
+          onmessage: () => {}, 
+          onclose: () => {
+              setDebugLog("נותק ע״י השרת");
+              stopConversation();
+          },
+          onerror: (e: any) => {
+              console.error(e);
+              setDebugLog("שגיאה בחיבור");
+          }
+      };
+
       const session = await ai.live.connect({
         model: "gemini-2.0-flash-exp",
         config: { 
           responseModalities: [Modality.AUDIO],
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } }
         },
-        callbacks: { 
-            onOpen: () => { 
-                console.log("Connected");
-                setStatus("connected");
-                setDebugLog("מחובר! דבר...");
-                // Kickstart
-                setTimeout(() => safeSend({ clientContent: { turns: [{ role: 'user', parts: [{ text: "Hello" }] }] }, turnComplete: true }), 1000);
-            },
-            onMessage: () => {}, 
-            onClose: (e) => {
-                console.log("Closed", e);
-                setDebugLog(`נותק (Code: ${e.code})`);
-                stopConversation();
-            },
-            onError: (e) => {
-                console.error(e);
-                setDebugLog("שגיאה בחיבור");
-            }
+        // *** הטריק שמונע את הקריסה: גם וגם ***
+        callbacks: {
+            ...eventHandlers,
+            onOpen: eventHandlers.onopen,
+            onMessage: eventHandlers.onmessage,
+            onClose: eventHandlers.onclose,
+            onError: eventHandlers.onerror
         }
       });
       activeSessionRef.current = session;
 
-      // מיקרופון
       const stream = await navigator.mediaDevices.getUserMedia({ 
           audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true } 
       });
@@ -129,7 +133,6 @@ const App: React.FC = () => {
       const processor = ctx.createScriptProcessor(4096, 1, 1);
       processorRef.current = processor;
       
-      // Zero Gain למניעת הד
       const zeroGain = ctx.createGain();
       zeroGain.gain.value = 0;
       source.connect(processor);
@@ -141,43 +144,33 @@ const App: React.FC = () => {
 
         const inputData = e.inputBuffer.getChannelData(0);
         
-        // 1. חישוב ווליום
         let sum = 0;
         for(let i=0; i<inputData.length; i+=50) sum += Math.abs(inputData[i]);
         const vol = Math.round(sum * 100);
         setMicVol(vol);
 
-        // 2. VAD: זיהוי דיבור ושתיקה
-        if (vol > 5) { // סף רגישות (אפשר לשחק עם זה: 5-10)
+        // VAD: זיהוי דיבור ושתיקה
+        if (vol > 5) { 
             lastVoiceTimeRef.current = Date.now();
             silenceTriggeredRef.current = false;
-            if (!isUserTalking) {
-                setIsUserTalking(true);
-            }
+            if (!isUserTalking) setIsUserTalking(true);
             
-            // שליחת אודיו
             const downsampled = downsampleBuffer(inputData, ctx.sampleRate, 16000);
             const pcm16 = floatTo16BitPCM(downsampled);
             safeSend({ realtimeInput: { mediaChunks: [{ data: pcm16, mimeType: 'audio/pcm;rate=16000' }] } });
 
         } else if (isUserTalking && !silenceTriggeredRef.current) {
-            // כרגע שקט, בודקים כמה זמן
             const timeSinceVoice = Date.now() - lastVoiceTimeRef.current;
-            
-            if (timeSinceVoice > 1200) { // 1.2 שניות של שקט = סוף משפט
-                console.log("Silence detected -> Sending turnComplete");
+            if (timeSinceVoice > 1200) { 
+                console.log("Silence -> Sending turnComplete");
                 setDebugLog("שתיקה -> מבקש תשובה");
-                
-                // *** הפקודה שמכריחה אותו לענות ***
                 safeSend({ clientContent: { turns: [] }, turnComplete: true });
-                
                 silenceTriggeredRef.current = true;
                 setIsUserTalking(false);
             }
         }
       };
 
-      // השמעת תשובות
       (async () => {
         try {
             if (!session.listen) return;
@@ -187,7 +180,6 @@ const App: React.FC = () => {
                     const audioData = part.inlineData?.data;
                     if (audioData) {
                         setIsSpeaking(true);
-                        
                         const binaryString = atob(audioData);
                         const len = binaryString.length;
                         const bytes = new Uint8Array(len);
@@ -213,7 +205,6 @@ const App: React.FC = () => {
 
   return (
     <div className="h-screen bg-slate-950 flex flex-col items-center justify-center text-white font-sans p-4">
-      {/* לוג ומצב */}
       <div className="absolute top-4 w-full max-w-md bg-slate-900/80 p-4 rounded-xl border border-white/10 text-center shadow-xl backdrop-blur-md">
         <div className="flex items-center justify-center gap-3 mb-2">
             {status === "connected" ? <CheckCircle className="text-green-500" /> : <AlertTriangle className="text-amber-500" />}
@@ -252,7 +243,6 @@ const App: React.FC = () => {
         </div>
       </div>
       
-      {/* ויזואליזציה */}
       {(status === "connected") && (
          <div className="fixed bottom-0 w-full h-32 pointer-events-none opacity-50">
             <AudioVisualizer isActive={true} color={isSpeaking ? "#a78bfa" : (isUserTalking ? "#34d399" : "#4b5563")} />
