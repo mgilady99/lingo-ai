@@ -1,12 +1,9 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { Mic, MicOff, Headphones, LogOut, MessageSquare, AlertCircle } from 'lucide-react';
+import { Mic, MicOff, LogOut, MessageSquare } from 'lucide-react';
 
-// ✅ יציאה לשורש (../) וכניסה ל-services
+// ייבוא נכון לפי המבנה שלך (יציאה לשורש)
 import { decode, decodeAudioData, createPcmBlob } from '../services/audioService';
-
-// ✅ יציאה לשורש (../) וכניסה ל-components
-// שים לב: Avatar ו-AudioVisualizer באות גדולה, transcriptitem באות קטנה (לפי העץ שלך)
 import Avatar from '../components/Avatar';
 import AudioVisualizer from '../components/AudioVisualizer';
 import TranscriptItem from '../components/transcriptitem';
@@ -17,13 +14,16 @@ const SUPPORTED_LANGUAGES = [
 ];
 
 const App: React.FC = () => {
-  const [status, setStatus] = useState("ready");
+  const [status, setStatus] = useState("ready"); // ready, connecting, connected
+  const [appState, setAppState] = useState("idle"); // idle, listening, processing, speaking
   const [isMuted, setIsMuted] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isSpeaking, setIsSpeaking] = useState(false);
   const [transcript, setTranscript] = useState<any[]>([]);
+  const [targetLang, setTargetLang] = useState(SUPPORTED_LANGUAGES[0]);
 
+  // Ref למניעת לולאות
   const recognitionRef = useRef<any>(null);
+  const isProcessingRef = useRef(false); 
   const scrollRef = useRef<HTMLDivElement>(null);
   const apiKey = import.meta.env.VITE_API_KEY;
 
@@ -39,7 +39,8 @@ const App: React.FC = () => {
     }
     window.speechSynthesis.cancel();
     setStatus("ready");
-    setIsSpeaking(false);
+    setAppState("idle");
+    isProcessingRef.current = false;
   }, []);
 
   const startConversation = async () => {
@@ -60,19 +61,21 @@ const App: React.FC = () => {
       setStatus("connected");
       
       const intro = "Hello! I am LINGO-AI. Let's practice English.";
-      // שולחים timestamp כדי למנוע קריסה
       setTranscript([{ role: 'model', text: intro, timestamp: new Date() }]);
       
+      // מתחילים בדיבור (המצב ישתנה אוטומטית ל-listening בסוף)
       speakResponse(intro, model);
       
     } catch (e: any) {
-      console.error(e);
-      setError("Microphone error");
+      setError("Microphone access denied");
       setStatus("ready");
     }
   };
 
   const initListening = (model: any) => {
+    // אם אנחנו באמצע עיבוד או דיבור - לא פותחים מיקרופון!
+    if (isProcessingRef.current) return;
+
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) return;
 
@@ -82,27 +85,45 @@ const App: React.FC = () => {
 
     const recognition = new SpeechRecognition();
     recognition.lang = 'en-US';
-    recognition.continuous = false;
+    recognition.continuous = false; // עוצר אוטומטית בסוף משפט
     recognition.interimResults = false;
 
+    recognition.onstart = () => {
+        setAppState("listening");
+    };
+
     recognition.onresult = async (event: any) => {
+      // 1. תפסנו דיבור - עוצרים הכל ועוברים למצב עיבוד
       const text = event.results[0][0].transcript;
+      if (!text.trim()) return;
+
+      console.log("User said:", text);
+      isProcessingRef.current = true; // נועלים מיקרופון
+      setAppState("processing"); // משנים סטטוס ל"חושב"
       
       setTranscript(prev => [...prev, { role: 'user', text, timestamp: new Date() }]);
       
       try {
+        // 2. שליחה ל-AI
         const result = await model.generateContent(`You are an English tutor. Reply briefly to: "${text}"`);
         const aiText = result.response.text();
         
         setTranscript(prev => [...prev, { role: 'model', text: aiText, timestamp: new Date() }]);
+        
+        // 3. ה-AI מדבר
         speakResponse(aiText, model);
       } catch (err) {
         setError("AI Error");
+        isProcessingRef.current = false;
+        initListening(model); // נסה שוב להקשיב אם נכשל
       }
     };
 
     recognition.onend = () => {
-      if (status === "connected" && !isSpeaking) {
+      // המיקרופון נסגר מעצמו.
+      // אם אנחנו לא במצב עיבוד (סתם שקט) - נפתח אותו מחדש.
+      // אם אנחנו במצב עיבוד (isProcessingRef = true) - נשאיר אותו סגור!
+      if (status === "connected" && !isProcessingRef.current) {
         try { recognition.start(); } catch(e) {}
       }
     };
@@ -114,17 +135,20 @@ const App: React.FC = () => {
   };
 
   const speakResponse = (text: string, model: any) => {
+    // מוודאים שהמיקרופון סגור
     if (recognitionRef.current) {
       try { recognitionRef.current.stop(); } catch(e) {}
     }
+    isProcessingRef.current = true; // עדיין עסוקים
+    setAppState("speaking");
 
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'en-US';
-    
-    utterance.onstart = () => setIsSpeaking(true);
+    utterance.rate = 1.0;
     
     utterance.onend = () => {
-      setIsSpeaking(false);
+      // 4. סיימנו לדבר - משחררים את הנעילה וחוזרים להקשיב
+      isProcessingRef.current = false;
       if (status === "connected") {
         setTimeout(() => initListening(model), 200);
       }
@@ -161,17 +185,21 @@ const App: React.FC = () => {
         </div>
 
         <div className="flex-1 flex flex-col items-center justify-center p-8">
-          <Avatar state={status !== 'connected' ? 'idle' : isSpeaking ? 'speaking' : isMuted ? 'thinking' : 'listening'} />
+          {/* שינוי האווטאר לפי המצב המדויק */}
+          <Avatar state={appState === 'speaking' ? 'speaking' : appState === 'processing' ? 'thinking' : appState === 'listening' ? 'listening' : 'idle'} />
           
           <div className="mt-10 text-center">
             <h2 className="text-4xl font-black text-white tracking-tight">
-              {status === 'connected' ? (isSpeaking ? 'AI מדברת...' : 'אני מקשיבה...') : 'מוכנים?'}
+              {appState === 'listening' && "אני מקשיבה..."}
+              {appState === 'processing' && "חושבת..."}
+              {appState === 'speaking' && "AI מדברת..."}
+              {appState === 'idle' && "מוכנים?"}
             </h2>
           </div>
 
-          {(isSpeaking || (status === 'connected' && !isMuted)) && (
+          {(appState === 'listening' || appState === 'speaking') && (
             <div className="mt-8 h-12 flex items-center justify-center">
-              <AudioVisualizer isActive={true} color={isSpeaking ? '#6366f1' : '#10b981'} />
+              <AudioVisualizer isActive={true} color={appState === 'speaking' ? '#6366f1' : '#10b981'} />
             </div>
           )}
         </div>
