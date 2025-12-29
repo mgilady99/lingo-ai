@@ -2,13 +2,14 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Mic, MicOff, Headphones, LogOut, MessageSquare, AlertCircle } from 'lucide-react';
 
-// ייבוא שירותים - וודא ששם התיקייה בגיטהאב הוא services באותיות קטנות
+// ✅ תיקון נתיב 1: services נמצאת מחוץ ל-src, לכן צריך לצאת למעלה (../)
 import { decode, decodeAudioData, createPcmBlob } from '../services/audioService';
 
-// תיקון קריטי: ייבוא באותיות קטנות כדי להתאים למערכת הקבצים ב-Vercel
-import Avatar from './components/avatar';
-import TranscriptItem from './components/transcriptitem';
-import AudioVisualizer from './components/audiovisualizer';
+// ✅ תיקון נתיב 2: components נמצאת מחוץ ל-src, לכן יוצאים למעלה (../)
+// חשוב: לפי התמונה, שמות הקבצים מתחילים באות גדולה, למעט transcriptitem
+import Avatar from '../components/Avatar';
+import TranscriptItem from '../components/transcriptitem'; 
+import AudioVisualizer from '../components/AudioVisualizer';
 
 const SUPPORTED_LANGUAGES = [
   { code: 'en-US', name: 'English', flag: '🇺🇸' },
@@ -34,7 +35,7 @@ const App: React.FC = () => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const apiKey = import.meta.env.VITE_API_KEY;
 
-  // אוטו-סקרול לתמלול
+  // גלילה אוטומטית של התמלול
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -67,7 +68,7 @@ const App: React.FC = () => {
       const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
 
       setStatus("connected");
-      const intro = "Hello! I am LINGO-AI. I'm ready to practice with you. What should we talk about?";
+      const intro = "Hello! I am LINGO-AI. Let's practice English together.";
       handleAIResponse(intro, model);
       
     } catch (e: any) {
@@ -80,7 +81,6 @@ const App: React.FC = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) return;
 
-    // ניקוי מופע קודם
     if (recognitionRef.current) {
         try { recognitionRef.current.stop(); } catch(e) {}
     }
@@ -180,7 +180,6 @@ const App: React.FC = () => {
         </div>
 
         <div className="flex-1 flex flex-col items-center justify-center p-8">
-          {/* שימוש בקומפוננטה המיובאת בשמה החדש */}
           <Avatar state={status !== 'connected' ? 'idle' : isSpeaking ? 'speaking' : isMuted ? 'thinking' : 'listening'} />
           
           <div className="mt-10 text-center">
@@ -211,7 +210,7 @@ const App: React.FC = () => {
                   </button>
                 </>
               ) : (
-                <button onClick={startConversation} className="bg-indigo-600 px-24 py-6 rounded-3xl font-black text-xl shadow-2xl hover:bg-indigo-500 transition-all active:scale-95 flex items-center gap-4">
+                <button onClick={startConversation} className="bg-indigo-600 px-24 py-6 rounded-3xl font-black text-xl shadow-2xl hover:bg-indigo-500 transition-all flex items-center gap-4">
                   <Mic size={30} /> התחל שיחה
                 </button>
               )}
