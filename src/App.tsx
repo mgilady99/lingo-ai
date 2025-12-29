@@ -1,16 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-// --- מניעת שגיאות Build של TypeScript ---
-// אנחנו מגדירים למערכת שהמיקרופון קיים בדפדפן
-declare global {
-  interface Window {
-    SpeechRecognition: any;
-    webkitSpeechRecognition: any;
-  }
-}
-
-// --- הגדרות ---
+// --- הגדרות בסיסיות ---
 const API_KEY = import.meta.env.VITE_API_KEY;
 
 const LANGUAGES = [
@@ -20,35 +11,23 @@ const LANGUAGES = [
   { code: 'fr-FR', name: 'French', label: 'Français 🇫🇷' },
 ];
 
-const MODULES = [
-  { id: 'translator', name: 'מתרגם', prompt: (s:string, t:string) => `Translate from ${s} to ${t}. Output only translation.` },
-  { id: 'chat', name: 'שיחה', prompt: (s:string, t:string) => `You are a friend. Chat in ${t}. Keep it short.` },
-  { id: 'tutor', name: 'מורה', prompt: (s:string, t:string) => `Correct grammar and reply in ${t}.` },
-  { id: 'interview', name: 'ראיון', prompt: (s:string, t:string) => `Interview me in ${t} for a job.` }
-];
-
 const App: React.FC = () => {
   const [isActive, setIsActive] = useState(false);
   const [appState, setAppState] = useState<'idle' | 'listening' | 'processing' | 'speaking'>('idle');
   const [sourceLang, setSourceLang] = useState('he-IL');
   const [targetLang, setTargetLang] = useState('en-US');
-  const [selectedModule, setSelectedModule] = useState(MODULES[0]);
-  const [transcript, setTranscript] = useState<{role: string, text: string}[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const recognitionRef = useRef<any>(null);
   const isRunning = useRef(false);
 
-  // לולאת הקשבה
+  // --- מנוע הקשבה ---
   const startListening = useCallback(() => {
     if (!isRunning.current) return;
     window.speechSynthesis.cancel();
 
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      setError("דפדפן לא נתמך");
-      return;
-    }
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
 
     if (recognitionRef.current) try { recognitionRef.current.stop(); } catch(e) {}
 
@@ -61,42 +40,59 @@ const App: React.FC = () => {
     rec.onresult = async (event: any) => {
       const text = event.results[0][0].transcript;
       if (!text.trim()) return;
+      
       setAppState('processing');
-      setTranscript(prev => [...prev, { role: 'user', text }]);
       await callGemini(text);
     };
-    rec.onerror = () => isRunning.current && setTimeout(startListening, 1000);
-    
-    try { rec.start(); recognitionRef.current = rec; } catch(e) {}
+
+    rec.onerror = () => {
+      if (isRunning.current) setTimeout(startListening, 1000);
+    };
+
+    try {
+      rec.start();
+      recognitionRef.current = rec;
+    } catch(e) {}
   }, [sourceLang]);
 
+  // --- מנוע תרגום (Gemini) ---
   const callGemini = async (userInput: string) => {
     try {
-      if (!API_KEY) { setError("חסר API KEY"); return; }
+      if (!API_KEY) return;
       const genAI = new GoogleGenerativeAI(API_KEY);
       const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
 
-      const prompt = `${selectedModule.prompt(sourceLang, targetLang)}\nInput: ${userInput}`;
+      const srcName = LANGUAGES.find(l => l.code === sourceLang)?.name;
+      const trgName = LANGUAGES.find(l => l.code === targetLang)?.name;
+
+      // פרומפט נוקשה למניעת אפקט ה"תוכי"
+      const prompt = `You are a professional translator. 
+      Task: Translate the user's input from ${srcName} to ${trgName}.
+      Rules: Output ONLY the translated text. Do NOT repeat the user's words in their original language. Do NOT add explanations.
+      Input: "${userInput}"`;
+
       const result = await model.generateContent(prompt);
       const aiText = result.response.text();
 
-      setTranscript(prev => [...prev, { role: 'ai', text: aiText }]);
       speak(aiText);
     } catch (e) {
       if (isRunning.current) startListening();
     }
   };
 
+  // --- מנוע דיבור ---
   const speak = (text: string) => {
     setAppState('speaking');
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = targetLang;
+
     utterance.onend = () => {
       if (isRunning.current) {
         setAppState('listening');
         startListening();
       }
     };
+
     window.speechSynthesis.speak(utterance);
   };
 
@@ -115,52 +111,91 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white flex flex-col md:flex-row overflow-hidden font-sans" dir="ltr">
-      <aside className="w-full md:w-80 bg-slate-900 border-r border-white/5 p-6 flex flex-col gap-6">
-        <h1 className="text-xl font-black text-indigo-500 italic">LINGOLIVE PRO</h1>
-        <div className="bg-slate-800/30 p-4 rounded-2xl border border-white/5 space-y-4">
-          <select value={sourceLang} onChange={e => setSourceLang(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs">
-            {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
-          </select>
-          <select value={targetLang} onChange={e => setTargetLang(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs">
-            {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
-          </select>
-          <div className="grid grid-cols-2 gap-2">
-            {MODULES.map(m => (
-              <button key={m.id} onClick={() => setSelectedModule(m)} className={`p-2 rounded-xl text-[10px] font-bold border ${selectedModule.id === m.id ? 'bg-indigo-600 border-indigo-400' : 'bg-slate-900 border-slate-700 text-slate-500'}`}>
-                {m.name}
-              </button>
-            ))}
-          </div>
+    <div className="min-h-screen bg-[#020617] text-white flex flex-col items-center justify-between p-6 overflow-hidden font-sans" dir="rtl">
+      
+      {/* כותרת ולוגו */}
+      <header className="w-full flex justify-between items-center max-w-4xl">
+        <div className="flex items-center gap-2">
+          <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center font-black text-xl shadow-lg shadow-indigo-500/20">L</div>
+          <h1 className="text-2xl font-black italic tracking-tighter">LINGOLIVE</h1>
         </div>
-        <div className="flex-1 bg-slate-950/50 rounded-2xl border border-white/5 p-4 overflow-y-auto space-y-2 text-[10px]">
-          {transcript.map((t, i) => (
-            <div key={i} className={t.role === 'user' ? 'text-indigo-400' : 'text-slate-300'}>
-              <span className="font-bold uppercase text-[8px] opacity-40 block">{t.role}</span>
-              {t.text}
-            </div>
-          ))}
+        <div className="flex items-center gap-2 bg-slate-900/50 px-4 py-2 rounded-full border border-white/10">
+          <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+          <span className="text-[10px] font-bold uppercase tracking-widest opacity-70">
+            {isActive ? appState : 'Offline'}
+          </span>
         </div>
-      </aside>
+      </header>
 
-      <main className="flex-1 relative flex flex-col items-center justify-center p-8">
-        <div className={`w-40 h-40 rounded-full border-4 flex items-center justify-center transition-all duration-500 bg-slate-900 ${
-          appState === 'listening' ? 'border-green-500 shadow-[0_0_30px_rgba(34,197,94,0.3)]' :
-          appState === 'speaking' ? 'border-indigo-500 shadow-[0_0_40px_rgba(99,102,241,0.4)]' :
-          'border-slate-800'
+      {/* אזור מרכזי: אווטאר ומצב */}
+      <main className="flex flex-col items-center gap-10 py-10">
+        
+        {/* הגדרות שפה מהירות */}
+        <div className="flex items-center gap-4 bg-slate-900/80 p-2 rounded-2xl border border-white/5 shadow-2xl">
+          <select value={sourceLang} onChange={e => setSourceLang(e.target.value)} disabled={isActive} className="bg-transparent text-sm font-bold outline-none cursor-pointer p-2">
+            {LANGUAGES.map(l => <option key={l.code} value={l.code} className="bg-slate-900">{l.label} (מקור)</option>)}
+          </select>
+          <div className="text-indigo-500 font-bold">➔</div>
+          <select value={targetLang} onChange={e => setTargetLang(e.target.value)} disabled={isActive} className="bg-transparent text-sm font-bold outline-none cursor-pointer p-2">
+            {LANGUAGES.map(l => <option key={l.code} value={l.code} className="bg-slate-900">{l.label} (יעד)</option>)}
+          </select>
+        </div>
+
+        {/* אווטאר מעוצב */}
+        <div className={`relative w-56 h-56 rounded-full border-4 flex items-center justify-center transition-all duration-700 bg-slate-900/50 ${
+          appState === 'listening' ? 'border-green-500 shadow-[0_0_60px_rgba(34,197,94,0.3)] scale-105' :
+          appState === 'speaking' ? 'border-indigo-500 shadow-[0_0_80px_rgba(99,102,241,0.4)] scale-110' :
+          appState === 'processing' ? 'border-yellow-500 animate-pulse' : 'border-white/10'
         }`}>
-          {appState === 'listening' ? <span className="animate-ping">🎤</span> : <span className="text-4xl opacity-20">👤</span>}
+          {appState === 'listening' ? (
+            <div className="flex gap-1 h-12 items-center">
+              <div className="w-1.5 h-full bg-green-500 rounded-full animate-[bounce_1s_infinite]" />
+              <div className="w-1.5 h-3/4 bg-green-500 rounded-full animate-[bounce_1.2s_infinite]" />
+              <div className="w-1.5 h-full bg-green-500 rounded-full animate-[bounce_0.8s_infinite]" />
+            </div>
+          ) : appState === 'speaking' ? (
+            <div className="text-4xl animate-pulse">🔊</div>
+          ) : (
+            <div className="text-6xl opacity-10">👤</div>
+          )}
         </div>
-        <div className="mt-8 text-center">
-          <h2 className="text-3xl font-black">{appState.toUpperCase()}</h2>
-          {error && <p className="text-red-500 text-xs mt-2">{error}</p>}
-        </div>
-        <div className="absolute bottom-12 w-full max-w-xs px-6">
-          <button onClick={handleToggle} className={`w-full py-4 rounded-2xl font-black text-lg shadow-2xl transition-all ${isActive ? 'bg-red-600' : 'bg-indigo-600 hover:bg-indigo-500'}`}>
-            {isActive ? 'STOP' : 'START CONVERSATION'}
-          </button>
+
+        <div className="text-center">
+          <h2 className="text-4xl font-black tracking-tight mb-2">
+            {appState === 'listening' && "אני מקשיבה..."}
+            {appState === 'processing' && "מתרגמת..."}
+            {appState === 'speaking' && "משמיעה תרגום..."}
+            {appState === 'idle' && "מוכנים להתחיל?"}
+          </h2>
+          <p className="text-slate-500 font-medium">התרגום יתבצע אוטומטית בכל סוף משפט</p>
         </div>
       </main>
+
+      {/* כפתור הפעלה תחתון */}
+      <footer className="w-full max-w-md pb-10">
+        {error && <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs text-center p-3 rounded-xl mb-6">{error}</div>}
+        
+        <button 
+          onClick={handleToggle}
+          className={`group w-full py-6 rounded-3xl font-black text-xl transition-all duration-300 flex items-center justify-center gap-4 shadow-2xl active:scale-95 ${
+            isActive 
+            ? 'bg-gradient-to-r from-red-600 to-red-500 shadow-red-500/20' 
+            : 'bg-gradient-to-r from-indigo-600 to-violet-600 shadow-indigo-500/30 hover:scale-[1.02]'
+          }`}
+        >
+          {isActive ? (
+            <>
+              <div className="w-4 h-4 bg-white rounded-sm" />
+              עצור תרגום
+            </>
+          ) : (
+            <>
+              <svg className="w-6 h-6 fill-current" viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+              התחל תרגום רציף
+            </>
+          )}
+        </button>
+      </footer>
     </div>
   );
 };
