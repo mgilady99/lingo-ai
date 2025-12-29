@@ -1,31 +1,53 @@
-export const decode = (base64: string): ArrayBuffer => {
-  const binaryString = atob(base64);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
-  return bytes.buffer;
-};
+// src/services/AudioService.ts
 
-export const decodeAudioData = (arrayBuffer: ArrayBuffer, audioCtx: AudioContext, sampleRate: number = 24000): AudioBuffer => {
-  const int16Array = new Int16Array(arrayBuffer);
-  const buffer = audioCtx.createBuffer(1, int16Array.length, sampleRate);
-  const channelData = buffer.getChannelData(0);
-  for (let i = 0; i < int16Array.length; i++) channelData[i] = int16Array[i] / 32768.0;
-  return buffer;
-};
+class AudioService {
+  private synth: SpeechSynthesis;
+  private voices: SpeechSynthesisVoice[] = [];
 
-// תיקון קריטי: המרת תדר ל-16kHz
-export const createPcmBlob = (float32Array: Float32Array, inputSampleRate: number): string => {
-  const targetSampleRate = 16000;
-  const ratio = inputSampleRate / targetSampleRate;
-  const newLength = Math.floor(float32Array.length / ratio);
-  const int16Array = new Int16Array(newLength);
-  for (let i = 0; i < newLength; i++) {
-    const offset = Math.floor(i * ratio);
-    const sample = Math.max(-1, Math.min(1, float32Array[offset]));
-    int16Array[i] = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+  constructor() {
+    this.synth = window.speechSynthesis;
+    this.loadVoices();
+    if (this.synth.onvoiceschanged !== undefined) {
+      this.synth.onvoiceschanged = () => this.loadVoices();
+    }
   }
-  const bytes = new Uint8Array(int16Array.buffer);
-  let binary = '';
-  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-  return btoa(binary);
-};
+
+  private loadVoices() {
+    this.voices = this.synth.getVoices();
+  }
+
+  public speak(text: string, lang: string = 'he-IL') {
+    // עצירה של כל דיבור קודם כדי למנוע התנגשויות
+    this.synth.cancel();
+
+    if (!text) return;
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    
+    // מציאת קול נשי בעדיפות ראשונה
+    const femaleVoice = this.voices.find(v => 
+      (v.name.includes('Google') || v.name.includes('Female')) && v.lang.includes(lang.split('-')[0])
+    ) || this.voices.find(v => v.lang.includes(lang.split('-')[0]));
+
+    if (femaleVoice) {
+      utterance.voice = femaleVoice;
+    }
+
+    utterance.lang = lang;
+    utterance.pitch = 1.3; // טון גבוה לנשיות
+    utterance.rate = 1.0;
+
+    // פקודה כפויה להפעלה
+    this.synth.speak(utterance);
+
+    return new Promise((resolve) => {
+      utterance.onend = resolve;
+    });
+  }
+
+  public stop() {
+    this.synth.cancel();
+  }
+}
+
+export const audioService = new AudioService();
