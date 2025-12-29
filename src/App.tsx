@@ -2,13 +2,13 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Mic, MicOff, Headphones, LogOut, MessageSquare, AlertCircle } from 'lucide-react';
 
-// ייבוא שירותים - יוצא לתיקיית services המקבילה
+// ייבוא שירותים - יוצא לתיקיית services המקבילה ל-src
 import { decode, decodeAudioData, createPcmBlob } from '../services/audioService';
 
-// ייבוא קומפוננטות - וודא שהן קיימות בתיקיית components
-import Avatar from './components/Avatar';
+// ייבוא קומפוננטות - שים לב לשימוש באותיות קטנות בשמות הקבצים כדי להתאים ל-Vercel
+import Avatar from './components/avatar';
 import TranscriptItem from './components/transcriptitem';
-import AudioVisualizer from './components/AudioVisualizer';
+import AudioVisualizer from './components/audiovisualizer';
 
 const SUPPORTED_LANGUAGES = [
   { code: 'en-US', name: 'English', flag: '🇺🇸' },
@@ -80,6 +80,7 @@ const App: React.FC = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) return;
 
+    // ניקוי זיהוי קודם אם קיים
     if (recognitionRef.current) {
         try { recognitionRef.current.stop(); } catch(e) {}
     }
@@ -103,7 +104,7 @@ const App: React.FC = () => {
     };
 
     recognition.onend = () => {
-      // אם השיחה פעילה וה-AI לא מדברת, ממשיכים להקשיב
+      // אם השיחה פעילה וה-AI לא מדברת, חוזרים להקשיב אוטומטית
       if (status === "connected" && !isSpeaking) {
         try { recognition.start(); } catch(e) {}
       }
@@ -118,7 +119,7 @@ const App: React.FC = () => {
   const handleAIResponse = (text: string, model: any) => {
     setTranscript(prev => [...prev, { role: 'model', text, timestamp: new Date() }]);
     
-    // סוגרים מיקרופון כדי שה-AI לא תשמע את עצמה
+    // סוגרים מיקרופון בזמן דיבור ה-AI למניעת רעשי רקע
     if (recognitionRef.current) {
       try { recognitionRef.current.stop(); } catch(e) {}
     }
@@ -131,7 +132,7 @@ const App: React.FC = () => {
     utterance.onend = () => {
       setIsSpeaking(false);
       if (status === "connected") {
-        // רק בסיום הדיבור חוזרים להקשיב
+        // רק בסיום הדיבור נפתח את המיקרופון שוב
         initListening(model);
       }
     };
@@ -197,10 +198,10 @@ const App: React.FC = () => {
             <div className="flex items-center gap-6">
               {status === 'connected' ? (
                 <>
-                  <button onClick={() => setIsMuted(!isMuted)} className={`p-5 rounded-full border-2 transition-all ${isMuted ? 'bg-red-500 border-red-400' : 'bg-slate-800 border-slate-700 hover:border-indigo-500'}`}>
+                  <button onClick={() => setIsMuted(!isMuted)} className={`p-5 rounded-full border-2 transition-all ${isMuted ? 'bg-red-500 border-red-400 shadow-lg' : 'bg-slate-800 border-slate-700 hover:border-indigo-500'}`}>
                     {isMuted ? <MicOff /> : <Mic />}
                   </button>
-                  <button onClick={stopConversation} className="bg-red-600 px-12 py-5 rounded-2xl font-black hover:bg-red-700 transition-all flex items-center gap-2">
+                  <button onClick={stopConversation} className="bg-red-600 px-12 py-5 rounded-2xl font-black hover:bg-red-700 transition-all flex items-center gap-2 shadow-xl">
                     <LogOut size={20} /> סיום
                   </button>
                 </>
