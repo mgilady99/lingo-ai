@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Mic, Headphones, MessageSquare, GraduationCap, Square, Volume2 } from 'lucide-react';
-import { audioService } from './services/AudioService'; // ייבוא השירות החדש
+import { audioService } from './services/AudioService'; // <--- וודא שהשורה הזו קיימת
 
 const App = () => {
   const [status, setStatus] = useState("ready");
@@ -13,7 +13,6 @@ const App = () => {
   const apiKey = import.meta.env.VITE_API_KEY;
   const recognitionRef = useRef<any>(null);
 
-  // פונקציית עזר לטיפול בדיבור
   const handleSpeak = async (text: string) => {
     setIsSpeaking(true);
     await audioService.speak(text, targetLang);
@@ -22,16 +21,19 @@ const App = () => {
   };
 
   const getAIResponse = async (userText: string) => {
+    if (!apiKey) {
+      setDebugLog("❌ שגיאה: חסר API KEY ב-Vercel");
+      return;
+    }
     try {
       setDebugLog("⏳ LINGO-AI מעבדת...");
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: `Respond as a female assistant in ${targetLang}. User: ${userText}` }] }]
+          contents: [{ parts: [{ text: `Respond as a female assistant in ${targetLang}. User input: ${userText}` }] }]
         })
       });
-
       const data = await response.json();
       const aiText = data.candidates[0].content.parts[0].text;
       setDebugLog("✅ תשובה התקבלה");
@@ -61,7 +63,7 @@ const App = () => {
         await navigator.mediaDevices.getUserMedia({ audio: true });
         setStatus("connected");
         setDebugLog("מחוברת");
-        handleSpeak("שלום, אני מחוברת."); // בדיקה מיידית של הקול
+        handleSpeak("שלום, אני מחוברת.");
       } catch (err) {
         setDebugLog("❌ המיקרופון חסום");
       }
@@ -77,12 +79,7 @@ const App = () => {
     <div className="h-screen bg-slate-950 text-white flex justify-end p-4 overflow-hidden font-sans" dir="rtl">
       <div className="w-full max-w-[320px] flex flex-col gap-4">
         
-        {/* כפתור בדיקת שמע מהירה - אם זה לא עובד, שום דבר לא יעבוד */}
-        <button onClick={() => audioService.speak("בדיקת רמקולים", "he-IL")} className="text-[10px] text-indigo-400 flex items-center justify-center gap-1 border border-indigo-500/30 py-1 rounded-full">
-          <Volume2 size={12} /> לחץ לבדיקת רמקולים
-        </button>
-
-        {/* שדות שפה */}
+        {/* שדות שפה קטנים */}
         <div className="grid grid-cols-2 gap-2">
           <div className="bg-slate-900 border border-slate-800 p-2 rounded-xl">
             <label className="text-[10px] text-slate-500 block mb-1">שפת אם</label>
@@ -109,9 +106,9 @@ const App = () => {
           ))}
         </div>
 
-        {/* אווטאר */}
+        {/* אווטאר אשה */}
         <div className="flex-1 flex items-center justify-center">
-          <div className={`w-52 h-52 rounded-full p-1 transition-all duration-700 ${isSpeaking ? 'bg-indigo-500 shadow-2xl scale-105' : 'bg-slate-800'}`}>
+          <div className={`w-56 h-56 rounded-full p-1.5 transition-all duration-700 ${isSpeaking ? 'bg-indigo-500 shadow-2xl scale-105' : 'bg-slate-800'}`}>
             <div className="w-full h-full rounded-full overflow-hidden border-4 border-slate-950">
               <img src="https://raw.githubusercontent.com/mgilady99/LINGO-AI/main/אווטאר.jpg" className="w-full h-full object-cover" />
             </div>
@@ -123,7 +120,7 @@ const App = () => {
           {status === 'ready' ? <><Mic size={24} /> התחל שיחה</> : <><Square size={24} /> הפסק</>}
         </button>
 
-        {/* תיבת דיבאג */}
+        {/* לוג סטטוס */}
         <div className="bg-black/40 p-2 rounded-lg text-[10px] text-center font-mono text-indigo-400 border border-slate-800">
           {debugLog}
         </div>
