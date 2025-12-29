@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic, Headphones, MessageSquare, GraduationCap, Square } from 'lucide-react';
+import { Mic, Headphones, MessageSquare, GraduationCap, Square, Volume2 } from 'lucide-react';
 
 const App = () => {
   const [status, setStatus] = useState("ready");
@@ -9,165 +9,160 @@ const App = () => {
   const [targetLang, setTargetLang] = useState("en-US");
   const [debugLog, setDebugLog] = useState("מערכת מוכנה - לחץ על התחל");
   
-  // משיכת המפתח - וודא שהוא מוגדר ב-Vercel תחת VITE_API_KEY
   const apiKey = (import.meta as any).env.VITE_API_KEY || "";
   const recognitionRef = useRef<any>(null);
 
-  // 1. פתרון לבעיית השמע: טעינת קולות מוקדמת
-  useEffect(() => {
-    const synth = window.speechSynthesis;
-    const loadVoices = () => synth.getVoices();
-    synth.onvoiceschanged = loadVoices;
-    loadVoices();
-  }, []);
+  const languages = [
+    { code: "he-IL", name: "עברית" }, { code: "en-US", name: "English" },
+    { code: "fr-FR", name: "Français" }, { code: "es-ES", name: "Español" },
+    { code: "de-DE", name: "Deutsch" }, { code: "it-IT", name: "Italiano" },
+    { code: "ru-RU", name: "Русский" }, { code: "ar-SA", name: "العربية" },
+    { code: "zh-CN", name: "中文" }, { code: "ja-JP", name: "日本語" },
+    { code: "pt-PT", name: "Português" }, { code: "hi-IN", name: "हिन्दी" },
+    { code: "tr-TR", name: "Türkçe" }
+  ];
 
+  // פונקציית דיבור עם דגש על קול נשי
   const speak = (text: string) => {
     if (!text) return;
-    window.speechSynthesis.cancel(); // עצירת דיבור קודם
-    
+    window.speechSynthesis.cancel();
     const msg = new SpeechSynthesisUtterance(text);
-    const voices = window.speechSynthesis.getVoices();
     
-    // חיפוש קול נשי בעברית או אנגלית
-    const femaleVoice = voices.find(v => (v.name.includes('Google') || v.name.includes('Hebrew') || v.name.includes('Female')) && v.lang.includes('he'))
-                     || voices.find(v => v.name.includes('Female') || v.name.includes('Google'));
+    // מציאת קול נשי מתוך הרשימה הזמינה במחשב שלך
+    const voices = window.speechSynthesis.getVoices();
+    const femaleVoice = voices.find(v => 
+      (v.name.toLowerCase().includes('female') || v.name.toLowerCase().includes('woman') || v.name.includes('Google עברית'))
+    ) || voices.find(v => v.lang.includes('he')) || voices[0];
 
-    if (femaleVoice) msg.voice = femaleVoice;
-    msg.lang = targetLang;
-    msg.pitch = 1.2;
+    msg.voice = femaleVoice;
+    msg.lang = 'he-IL';
+    msg.pitch = 1.4; // הגבהת הטון לקול נשי יותר
+    msg.rate = 0.9;  // קצב דיבור נעים
+
     msg.onstart = () => setIsSpeaking(true);
     msg.onend = () => {
       setIsSpeaking(false);
-      if (status === "connected") {
-        setDebugLog("🎤 מקשיבה שוב...");
-        setTimeout(() => startListening(), 400);
-      }
+      if (status === "connected") startListening();
     };
-    
     window.speechSynthesis.speak(msg);
   };
 
-  // 2. חיבור חסין ל-Gemini 2.0 Flash
+  // שליחה ל-Gemini 2.0 Flash
   const getAIResponse = async (userText: string) => {
-    if (!apiKey || apiKey.length < 10) {
-      setDebugLog("❌ שגיאה: מפתח ה-API לא הוגדר ב-Vercel!");
+    if (!apiKey) {
+      setDebugLog("❌ שגיאה: חסר API KEY ב-Vercel");
       return;
     }
 
     try {
-      setDebugLog("⚡ ה-AI מעבדת את הבקשה...");
+      setDebugLog("⚡ AI חושבת...");
       const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`;
       
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: `Role: Female Assistant. Module: ${activeModule}. Task: Translate or chat naturally from ${nativeLang} to ${targetLang}. User input: "${userText}"` }] }]
+          contents: [{ parts: [{ text: `You are a young female assistant. Speak naturally in Hebrew. User: ${userText}` }] }]
         })
       });
 
       const data = await response.json();
+      if (data.error) throw new Error(data.error.message);
       
-      if (data.error) {
-        setDebugLog(`❌ שגיאת API: ${data.error.message}`);
-        return;
-      }
-
       const aiText = data.candidates[0].content.parts[0].text;
-      setDebugLog("✅ תשובה התקבלה - משמיעה...");
+      setDebugLog("✅ AI עונה");
       speak(aiText);
-    } catch (e) {
-      setDebugLog("❌ תקלה בתקשורת עם שרת ה-AI");
+    } catch (e: any) {
+      setDebugLog(`❌ שגיאה: ${e.message}`);
     }
   };
 
   const startListening = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      setDebugLog("❌ הדפדפן שלך לא תומך בהקלטה");
+      setDebugLog("❌ המיקרופון לא נתמך בדפדפן זה");
       return;
     }
 
     const recognition = new SpeechRecognition();
     recognition.lang = nativeLang;
-    recognition.interimResults = false;
-
+    
+    recognition.onstart = () => setDebugLog("🎤 אני מקשיבה לך...");
+    
     recognition.onresult = (event: any) => {
       const transcript = event.results[0][0].transcript;
-      setDebugLog(`🎤 נקלט: "${transcript}"`);
+      setDebugLog(`🎤 אמרת: "${transcript}"`);
       getAIResponse(transcript);
     };
 
     recognition.onerror = (err: any) => {
-      if (err.error === 'no-speech') {
-        if (status === "connected") startListening();
-      } else {
-        setDebugLog(`❌ שגיאת מיקרופון: ${err.error}`);
+      setDebugLog(`❌ שגיאת מיקרופון: ${err.error}`);
+      if (err.error === 'not-allowed') {
+        alert("אנא אשר את המיקרופון בסרגל הכתובות (סמל המנעול)");
       }
     };
 
-    recognition.start();
-    recognitionRef.current = recognition;
+    try {
+      recognition.start();
+      recognitionRef.current = recognition;
+    } catch (e) {}
   };
 
   const toggleSession = () => {
     if (status === "ready") {
       setStatus("connected");
-      setDebugLog("מתחברת...");
-      // דיבור ראשוני "פותח" את חסימת האודיו של הדפדפן
-      speak("שלום, אני מחוברת. אני מוכנה לעזור.");
+      speak("שלום, אני מחוברת. איך אוכל לעזור?");
     } else {
       setStatus("ready");
       window.speechSynthesis.cancel();
       if (recognitionRef.current) recognitionRef.current.stop();
-      setDebugLog("המערכת הופסקה");
+      setDebugLog("המערכת נעצרה");
     }
   };
 
   return (
     <div className="h-screen bg-slate-950 text-white flex justify-end p-4 overflow-hidden font-sans" dir="rtl">
-      <div className="w-full max-w-[340px] flex flex-col gap-4 pt-2">
+      <div className="w-full max-w-[340px] flex flex-col gap-4">
         
         {/* שדות שפה */}
         <div className="grid grid-cols-2 gap-2">
-          <div>
-            <span className="text-[10px] text-slate-500 block mb-1">שפת אם</span>
-            <select value={nativeLang} onChange={(e)=>setNativeLang(e.target.value)} className="w-full bg-slate-900 border border-slate-800 p-2 rounded-lg text-xs outline-none">
-              <option value="he-IL">עברית</option>
-              <option value="en-US">English</option>
+          <div className="bg-slate-900 p-2 rounded-xl border border-slate-800">
+            <span className="text-[10px] text-slate-500 block">שפת אם</span>
+            <select value={nativeLang} onChange={(e)=>setNativeLang(e.target.value)} className="w-full bg-transparent text-sm outline-none">
+              {languages.map(l => <option key={l.code} value={l.code}>{l.name}</option>)}
             </select>
           </div>
-          <div>
-            <span className="text-[10px] text-slate-500 block mb-1">שפת תרגום</span>
-            <select value={targetLang} onChange={(e)=>setTargetLang(e.target.value)} className="w-full bg-slate-900 border border-slate-800 p-2 rounded-lg text-xs outline-none">
-              <option value="en-US">English</option>
-              <option value="he-IL">עברית</option>
+          <div className="bg-slate-900 p-2 rounded-xl border border-slate-800">
+            <span className="text-[10px] text-slate-500 block">שפת תרגום</span>
+            <select value={targetLang} onChange={(e)=>setTargetLang(e.target.value)} className="w-full bg-transparent text-sm outline-none">
+              {languages.map(l => <option key={l.code} value={l.code}>{l.name}</option>)}
             </select>
           </div>
         </div>
 
         {/* מודולים */}
         <div className="grid grid-cols-2 gap-2">
-          {['translation', 'simultaneous', 'chat', 'learning'].map((m) => (
-            <button key={m} onClick={()=>setActiveModule(m)} className={`p-3 rounded-xl flex flex-col items-center gap-1 text-[10px] font-bold ${activeModule === m ? 'bg-indigo-600 shadow-lg' : 'bg-slate-900 opacity-60'}`}>
-              {m === 'translation' && <Mic size={16}/>}
-              {m === 'simultaneous' && <Headphones size={16}/>}
-              {m === 'chat' && <MessageSquare size={16}/>}
-              {m === 'learning' && <GraduationCap size={16}/>}
-              {m === 'translation' ? 'תרגום שיחה' : m === 'simultaneous' ? 'סימולטני' : m === 'chat' ? 'צ\'אט' : 'לימוד'}
+          {[
+            { id: 'translation', name: 'תרגום שיחה', icon: <Mic size={16}/> },
+            { id: 'simultaneous', name: 'סימולטני', icon: <Headphones size={16}/> },
+            { id: 'chat', name: 'צ\'אט', icon: <MessageSquare size={16}/> },
+            { id: 'learning', name: 'לימוד', icon: <GraduationCap size={16}/> }
+          ].map(m => (
+            <button key={m.id} onClick={()=>setActiveModule(m.id)} className={`p-3 rounded-xl flex flex-col items-center gap-1 text-[10px] font-bold ${activeModule === m.id ? 'bg-indigo-600' : 'bg-slate-900 opacity-60'}`}>
+              {m.icon} {m.name}
             </button>
           ))}
         </div>
 
-        {/* אווטאר */}
+        {/* אווטאר אשה */}
         <div className="flex-1 flex items-center justify-center">
-          <div className={`w-52 h-52 rounded-full p-1 transition-all duration-700 ${isSpeaking ? 'bg-indigo-500 shadow-2xl scale-105' : 'bg-slate-800'}`}>
+          <div className={`w-52 h-52 rounded-full p-1.5 transition-all duration-700 ${isSpeaking ? 'bg-indigo-500 shadow-2xl scale-105' : 'bg-slate-800'}`}>
             <div className="w-full h-full rounded-full overflow-hidden border-4 border-slate-950">
               <img 
                 src="https://raw.githubusercontent.com/mgilady99/LINGO-AI/main/אווטאר.jpg" 
-                alt="AI" 
+                alt="AI Assistant" 
                 className="w-full h-full object-cover"
-                onError={(e) => (e.currentTarget.src = "https://via.placeholder.com/200?text=AI")}
+                onError={(e) => (e.currentTarget.src = "https://www.w3schools.com/howto/img_avatar2.png")}
               />
             </div>
           </div>
@@ -176,13 +171,13 @@ const App = () => {
         {/* כפתור הפעלה */}
         <button 
           onClick={toggleSession}
-          className={`w-full py-5 rounded-3xl font-bold text-xl flex items-center justify-center gap-3 transition-all ${status === 'ready' ? 'bg-indigo-600' : 'bg-red-600 animate-pulse'}`}
+          className={`w-full py-5 rounded-3xl font-bold text-xl flex items-center justify-center gap-3 transition-all ${status === 'ready' ? 'bg-indigo-600' : 'bg-red-600'}`}
         >
           {status === 'ready' ? <><Mic size={24} /> התחל שיחה</> : <><Square size={24} /> הפסק</>}
         </button>
 
-        {/* לוג הדיבאג - כאן תראה מה הבעיה */}
-        <div className="bg-black/50 p-2 rounded-lg text-[10px] text-center font-mono text-indigo-300 border border-slate-800">
+        {/* לוג הדיבאג - קריטי לבדיקה שלך */}
+        <div className="bg-black/40 p-2 rounded-lg text-[10px] text-center font-mono text-indigo-300 border border-slate-800">
           {debugLog}
         </div>
       </div>
