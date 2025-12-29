@@ -1,5 +1,4 @@
-
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Mic, Headphones, MessageSquare, GraduationCap, Square } from 'lucide-react';
 
 const App = () => {
@@ -13,12 +12,20 @@ const App = () => {
   const apiKey = (import.meta as any).env.VITE_API_KEY || "";
   const recognitionRef = useRef<any>(null);
 
-  // פונקציית הקול הנשי (TTS)
+  // פונקציה להשגת קול נשי חביב
   const speak = (text: string) => {
     window.speechSynthesis.cancel();
     const msg = new SpeechSynthesisUtterance(text);
+    
+    // ניסיון למצוא קול נשי ברשימת הקולות של המערכת שלך
+    const voices = window.speechSynthesis.getVoices();
+    const femaleVoice = voices.find(v => v.name.toLowerCase().includes('female') || v.name.toLowerCase().includes('woman') || v.name.includes('Google עברית'));
+    
+    if (femaleVoice) msg.voice = femaleVoice;
     msg.lang = 'he-IL';
-    msg.pitch = 1.2; // טון נשי חביב
+    msg.pitch = 1.3; // טון גבוה יותר לקול נשי
+    msg.rate = 1.0;
+
     msg.onstart = () => setIsSpeaking(true);
     msg.onend = () => {
       setIsSpeaking(false);
@@ -27,38 +34,45 @@ const App = () => {
     window.speechSynthesis.speak(msg);
   };
 
-  // חיבור ישיר ל-Gemini 2.0 - פותר את שגיאת ה-404
+  // חיבור אמיתי ל-Gemini 2.0
   const getAIResponse = async (userText: string) => {
     try {
-      setDebugLog("🤔 חושבת...");
+      setDebugLog("⚡ AI חושבת...");
       const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`;
       
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: `System: Module is ${activeModule}. User says: ${userText}` }] }]
+          contents: [{ parts: [{ text: `User language: ${nativeLang}. Target language: ${targetLang}. Module: ${activeModule}. Instruction: Answer as a helpful female assistant. User said: ${userText}` }] }]
         })
       });
 
       const data = await response.json();
+      if (data.error) throw new Error(data.error.message);
+      
       const aiText = data.candidates[0].content.parts[0].text;
-      setDebugLog("✅ עונה");
+      setDebugLog("✅ Gemini עונה");
       speak(aiText);
-    } catch (e) {
-      setDebugLog("❌ שגיאת חיבור ל-AI");
+    } catch (e: any) {
+      console.error(e);
+      setDebugLog("❌ שגיאת חיבור - בדוק מפתח API");
     }
   };
 
   const startListening = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) return;
+    
     const recognition = new SpeechRecognition();
     recognition.lang = nativeLang;
     recognition.onresult = (event: any) => {
       const transcript = event.results[0][0].transcript;
       setDebugLog(`🎤 נקלט: ${transcript}`);
       getAIResponse(transcript);
+    };
+    recognition.onerror = () => {
+      if (status === "connected" && !isSpeaking) try { recognition.start(); } catch(e) {}
     };
     recognition.start();
     recognitionRef.current = recognition;
@@ -67,76 +81,78 @@ const App = () => {
   const toggleSession = () => {
     if (status === "ready") {
       setStatus("connected");
-      speak("שלום, אני מחוברת. איך אפשר לעזור?");
+      speak("שלום, אני מחוברת ומוכנה לעזור לך. איך אני יכולה לסייע?");
     } else {
       setStatus("ready");
       window.speechSynthesis.cancel();
       if (recognitionRef.current) recognitionRef.current.stop();
+      setDebugLog("שיחה הסתיימה");
     }
   };
 
   return (
-    <div className="h-screen bg-slate-950 text-white flex p-4 overflow-hidden font-sans" dir="rtl">
-      {/* ריכוז כל הרכיבים בצד שמאל */}
-      <div className="w-full max-w-[280px] flex flex-col gap-4">
+    <div className="h-screen bg-slate-950 text-white flex p-4 font-sans" dir="rtl">
+      <div className="w-full max-w-[300px] flex flex-col gap-5">
         
-        {/* 1. שדות בחירת שפה (למעלה) */}
-        <div className="flex gap-2">
+        {/* שדות שפה */}
+        <div className="flex gap-3">
           <div className="flex-1">
-            <span className="text-[10px] opacity-50 block mb-1">שפת אם</span>
-            <select value={nativeLang} onChange={(e)=>setNativeLang(e.target.value)} className="w-full bg-slate-900 border border-slate-700 p-2 rounded text-xs outline-none">
-              <option value="he-IL">עברית</option>
-              <option value="en-US">English</option>
+            <label className="text-[10px] text-slate-500 block mb-1">שפת אם</label>
+            <select value={nativeLang} onChange={(e)=>setNativeLang(e.target.value)} className="w-full bg-slate-900 border border-slate-800 p-2 rounded-lg text-xs outline-none focus:border-indigo-500">
+              <option value="he-IL">עברית 🇮🇱</option>
+              <option value="en-US">English 🇺🇸</option>
             </select>
           </div>
           <div className="flex-1">
-            <span className="text-[10px] opacity-50 block mb-1">שפת תרגום</span>
-            <select value={targetLang} onChange={(e)=>setTargetLang(e.target.value)} className="w-full bg-slate-900 border border-slate-700 p-2 rounded text-xs outline-none">
-              <option value="en-US">English</option>
-              <option value="fr-FR">Français</option>
-              <option value="he-IL">עברית</option>
+            <label className="text-[10px] text-slate-500 block mb-1">שפת תרגום</label>
+            <select value={targetLang} onChange={(e)=>setTargetLang(e.target.value)} className="w-full bg-slate-900 border border-slate-800 p-2 rounded-lg text-xs outline-none focus:border-indigo-500">
+              <option value="en-US">English 🇺🇸</option>
+              <option value="he-IL">עברית 🇮🇱</option>
+              <option value="fr-FR">Français 🇫🇷</option>
             </select>
           </div>
         </div>
 
-        {/* 2. ארבעת המודולים (2+2) */}
-        <div className="grid grid-cols-2 gap-2">
-          <button onClick={()=>setActiveModule("translation")} className={`p-3 rounded-xl flex flex-col items-center gap-1 text-[10px] transition-all ${activeModule === 'translation' ? 'bg-indigo-600 ring-2 ring-indigo-400' : 'bg-slate-900 opacity-60'}`}>
-            <Mic size={18} /> תרגום
-          </button>
-          <button onClick={()=>setActiveModule("simultaneous")} className={`p-3 rounded-xl flex flex-col items-center gap-1 text-[10px] transition-all ${activeModule === 'simultaneous' ? 'bg-indigo-600 ring-2 ring-indigo-400' : 'bg-slate-900 opacity-60'}`}>
-            <Headphones size={18} /> סימולטני
-          </button>
-          <button onClick={()=>setActiveModule("chat")} className={`p-3 rounded-xl flex flex-col items-center gap-1 text-[10px] transition-all ${activeModule === 'chat' ? 'bg-indigo-600 ring-2 ring-indigo-400' : 'bg-slate-900 opacity-60'}`}>
-            <MessageSquare size={18} /> צ'אט
-          </button>
-          <button onClick={()=>setActiveModule("learning")} className={`p-3 rounded-xl flex flex-col items-center gap-1 text-[10px] transition-all ${activeModule === 'learning' ? 'bg-indigo-600 ring-2 ring-indigo-400' : 'bg-slate-900 opacity-60'}`}>
-            <GraduationCap size={18} /> לימוד
-          </button>
+        {/* מודולים 2+2 */}
+        <div className="grid grid-cols-2 gap-3">
+          {[
+            { id: "translation", icon: <Mic size={18}/>, label: "תרגום" },
+            { id: "simultaneous", icon: <Headphones size={18}/>, label: "סימולטני" },
+            { id: "chat", icon: <MessageSquare size={18}/>, label: "צ'אט" },
+            { id: "learning", icon: <GraduationCap size={18}/>, label: "לימוד" }
+          ].map(mod => (
+            <button key={mod.id} onClick={()=>setActiveModule(mod.id)} className={`p-4 rounded-2xl flex flex-col items-center gap-2 text-[10px] font-bold transition-all ${activeModule === mod.id ? 'bg-indigo-600 ring-2 ring-indigo-400 shadow-lg shadow-indigo-500/20' : 'bg-slate-900 opacity-60'}`}>
+              {mod.icon} {mod.label}
+            </button>
+          ))}
         </div>
 
-        {/* 3. תמונת האווטאר (בעיגול עם מסגרת) */}
-        <div className="flex justify-center py-2">
-          <div className={`w-48 h-48 rounded-full overflow-hidden border-[6px] transition-all duration-500 ${isSpeaking ? 'border-indigo-500 shadow-[0_0_30px_rgba(79,70,229,0.5)] scale-105' : 'border-slate-800'}`}>
-            <img 
-              src="https://raw.githubusercontent.com/mgilady99/LINGO-AI/main/אווטאר.jpg" 
-              alt="Avatar" 
-              className="w-full h-full object-cover"
-              onError={(e) => { (e.target as any).src = 'https://via.placeholder.com/200?text=Avatar'; }}
-            />
+        {/* אווטאר עגול עם מסגרת */}
+        <div className="flex justify-center items-center py-4">
+          <div className={`w-52 h-52 rounded-full p-1.5 transition-all duration-700 ${isSpeaking ? 'bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 animate-pulse' : 'bg-slate-800'}`}>
+            <div className="w-full h-full rounded-full overflow-hidden border-4 border-slate-950 relative">
+              <img 
+                src="https://raw.githubusercontent.com/mgilady99/LINGO-AI/main/אווטאר.jpg" 
+                alt="Avatar" 
+                className={`w-full h-full object-cover transition-transform duration-500 ${isSpeaking ? 'scale-110' : 'scale-100'}`}
+                onError={(e) => { (e.target as any).src = 'https://via.placeholder.com/200?text=AI+Assistant'; }}
+              />
+            </div>
           </div>
         </div>
 
-        {/* 4. כפתור הפעלה */}
+        {/* כפתור הפעלה */}
         <button 
           onClick={toggleSession}
-          className={`w-full py-4 rounded-2xl font-bold flex items-center justify-center gap-2 text-lg shadow-xl active:scale-95 transition-all ${status === 'ready' ? 'bg-indigo-600' : 'bg-red-600'}`}
+          className={`w-full py-5 rounded-3xl font-black text-xl flex items-center justify-center gap-4 transition-all active:scale-95 shadow-2xl ${
+            status === 'ready' ? 'bg-indigo-600 shadow-indigo-500/20' : 'bg-red-600 shadow-red-500/20'
+          }`}
         >
-          {status === 'ready' ? <><Mic size={24}/> התחל שיחה</> : <><Square size={24}/> עצור</>}
+          {status === 'ready' ? <><Mic size={28}/> START</> : <><Square size={28}/> STOP</>}
         </button>
 
-        {/* סטטוס מערכת */}
-        <div className="mt-auto bg-black/40 p-2 rounded text-center text-[10px] font-mono text-indigo-400 uppercase tracking-tighter">
+        {/* לוג תחתון */}
+        <div className="mt-auto bg-black/30 p-2 rounded-xl text-center text-[10px] font-mono text-indigo-400 uppercase tracking-widest border border-slate-900">
           {debugLog}
         </div>
       </div>
