@@ -2,10 +2,10 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Mic, MicOff, Headphones, LogOut, MessageSquare, AlertCircle } from 'lucide-react';
 
-// ייבוא שירותים - יוצא לתיקיית services המקבילה ל-src
+// ייבוא שירותים - וודא ששם התיקייה בגיטהאב הוא services באותיות קטנות
 import { decode, decodeAudioData, createPcmBlob } from '../services/audioService';
 
-// ייבוא קומפוננטות - שים לב לשימוש באותיות קטנות בשמות הקבצים כדי להתאים ל-Vercel
+// תיקון קריטי: ייבוא באותיות קטנות כדי להתאים למערכת הקבצים ב-Vercel
 import Avatar from './components/avatar';
 import TranscriptItem from './components/transcriptitem';
 import AudioVisualizer from './components/audiovisualizer';
@@ -34,7 +34,7 @@ const App: React.FC = () => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const apiKey = import.meta.env.VITE_API_KEY;
 
-  // גלילה אוטומטית של התמלול
+  // אוטו-סקרול לתמלול
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -52,7 +52,7 @@ const App: React.FC = () => {
 
   const startConversation = async () => {
     if (!apiKey) {
-      setError("מפתח API חסר. אנא הגדר VITE_API_KEY ב-Vercel.");
+      setError("Missing API Key. Please check Vercel environment variables.");
       return;
     }
 
@@ -67,11 +67,11 @@ const App: React.FC = () => {
       const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
 
       setStatus("connected");
-      const intro = "Hello! I am LINGO-AI. How can I help you today?";
+      const intro = "Hello! I am LINGO-AI. I'm ready to practice with you. What should we talk about?";
       handleAIResponse(intro, model);
       
     } catch (e: any) {
-      setError("גישה למיקרופון נדחתה או תקלת חיבור.");
+      setError("Microphone access denied.");
       setStatus("ready");
     }
   };
@@ -80,7 +80,7 @@ const App: React.FC = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) return;
 
-    // ניקוי זיהוי קודם אם קיים
+    // ניקוי מופע קודם
     if (recognitionRef.current) {
         try { recognitionRef.current.stop(); } catch(e) {}
     }
@@ -95,16 +95,16 @@ const App: React.FC = () => {
       setTranscript(prev => [...prev, { role: 'user', text, timestamp: new Date() }]);
       
       try {
-        const result = await model.generateContent(`Respond as a female assistant in short English: ${text}`);
+        const result = await model.generateContent(`As a female tutor, respond naturally and briefly in English to: ${text}`);
         const aiText = result.response.text();
         handleAIResponse(aiText, model);
       } catch (err) {
-        setError("שגיאה בתגובת ה-AI.");
+        setError("AI error. Please try again.");
       }
     };
 
     recognition.onend = () => {
-      // אם השיחה פעילה וה-AI לא מדברת, חוזרים להקשיב אוטומטית
+      // אם השיחה פעילה וה-AI לא מדברת, פותחים מיקרופון שוב
       if (status === "connected" && !isSpeaking) {
         try { recognition.start(); } catch(e) {}
       }
@@ -119,20 +119,19 @@ const App: React.FC = () => {
   const handleAIResponse = (text: string, model: any) => {
     setTranscript(prev => [...prev, { role: 'model', text, timestamp: new Date() }]);
     
-    // סוגרים מיקרופון בזמן דיבור ה-AI למניעת רעשי רקע
+    // סגירת מיקרופון בזמן שהיא מדברת
     if (recognitionRef.current) {
       try { recognitionRef.current.stop(); } catch(e) {}
     }
 
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = targetLang.code;
-    utterance.rate = 1.0;
     
     utterance.onstart = () => setIsSpeaking(true);
     utterance.onend = () => {
       setIsSpeaking(false);
+      // רק כשהיא מסיימת לדבר, המיקרופון נפתח מחדש
       if (status === "connected") {
-        // רק בסיום הדיבור נפתח את המיקרופון שוב
         initListening(model);
       }
     };
@@ -150,8 +149,8 @@ const App: React.FC = () => {
         </div>
 
         <div className="space-y-4">
-          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">שפות</label>
-          <div className="p-3 bg-slate-800/40 rounded-2xl border border-white/5 space-y-3">
+          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">הגדרות שפה</label>
+          <div className="p-3 bg-slate-800/40 rounded-2xl border border-white/5">
             <select value={targetLang.code} onChange={(e) => setTargetLang(SUPPORTED_LANGUAGES.find(l => l.code === e.target.value)!)} className="w-full bg-slate-950 border border-slate-700 rounded-lg py-2 px-3 text-xs outline-none">
               {SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}
             </select>
@@ -160,10 +159,15 @@ const App: React.FC = () => {
 
         <div className="flex-1 min-h-0 flex flex-col">
           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-            <MessageSquare size={12} /> תמלול
+            <MessageSquare size={12} /> תמלול חי
           </label>
           <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-2 pr-2 scrollbar-thin scrollbar-thumb-slate-700">
-            {transcript.map((entry, i) => <TranscriptItem key={i} entry={entry} />)}
+            {transcript.map((entry, i) => (
+              <div key={i} className={`p-3 rounded-xl text-[11px] ${entry.role === 'user' ? 'bg-indigo-600/10 mr-4' : 'bg-white/5 ml-4'}`}>
+                <span className="opacity-40 block mb-1 text-[9px] font-bold uppercase">{entry.role === 'user' ? 'אתה' : 'AI'}</span>
+                {entry.text}
+              </div>
+            ))}
           </div>
         </div>
       </aside>
@@ -176,11 +180,12 @@ const App: React.FC = () => {
         </div>
 
         <div className="flex-1 flex flex-col items-center justify-center p-8">
+          {/* שימוש בקומפוננטה המיובאת בשמה החדש */}
           <Avatar state={status !== 'connected' ? 'idle' : isSpeaking ? 'speaking' : isMuted ? 'thinking' : 'listening'} />
           
           <div className="mt-10 text-center">
             <h2 className="text-4xl font-black text-white tracking-tight">
-              {status === 'connected' ? (isSpeaking ? 'LINGO-AI מדברת...' : 'אני מקשיבה...') : 'מוכנה להתחיל?'}
+              {status === 'connected' ? (isSpeaking ? 'AI מדברת...' : 'אני מקשיבה...') : 'מוכנים?'}
             </h2>
           </div>
 
@@ -198,15 +203,15 @@ const App: React.FC = () => {
             <div className="flex items-center gap-6">
               {status === 'connected' ? (
                 <>
-                  <button onClick={() => setIsMuted(!isMuted)} className={`p-5 rounded-full border-2 transition-all ${isMuted ? 'bg-red-500 border-red-400 shadow-lg' : 'bg-slate-800 border-slate-700 hover:border-indigo-500'}`}>
+                  <button onClick={() => setIsMuted(!isMuted)} className={`p-5 rounded-full border-2 transition-all ${isMuted ? 'bg-red-500 border-red-400' : 'bg-slate-800 border-slate-700 hover:border-indigo-500'}`}>
                     {isMuted ? <MicOff /> : <Mic />}
                   </button>
-                  <button onClick={stopConversation} className="bg-red-600 px-12 py-5 rounded-2xl font-black hover:bg-red-700 transition-all flex items-center gap-2 shadow-xl">
+                  <button onClick={stopConversation} className="bg-red-600 px-12 py-5 rounded-2xl font-black hover:bg-red-700 transition-all flex items-center gap-2">
                     <LogOut size={20} /> סיום
                   </button>
                 </>
               ) : (
-                <button onClick={startConversation} className="bg-indigo-600 px-24 py-6 rounded-3xl font-black text-xl shadow-2xl hover:bg-indigo-500 transition-all flex items-center gap-4">
+                <button onClick={startConversation} className="bg-indigo-600 px-24 py-6 rounded-3xl font-black text-xl shadow-2xl hover:bg-indigo-500 transition-all active:scale-95 flex items-center gap-4">
                   <Mic size={30} /> התחל שיחה
                 </button>
               )}
