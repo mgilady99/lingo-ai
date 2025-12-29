@@ -8,7 +8,6 @@ import {
   ArrowRightLeft,
   ExternalLink,
   StopCircle,
-  Play
 } from 'lucide-react';
 
 // --- הגדרות (ללא שינוי) ---
@@ -34,7 +33,6 @@ const App: React.FC = () => {
   // --- State & Logic (הלוגיקה המקורית נשמרת במלואה) ---
   const [isActive, setIsActive] = useState(false);
   const [appState, setAppState] = useState<'idle' | 'listening' | 'processing' | 'speaking'>('idle');
-  // הגדרת ברירות מחדל שיתאימו לתמונה (אנגלית לעברית)
   const [langA, setLangA] = useState('en-US');
   const [langB, setLangB] = useState('he-IL');
   const [error, setError] = useState<string | null>(null);
@@ -126,41 +124,41 @@ const App: React.FC = () => {
 
   // --- רכיבי עזר לממשק ---
 
-  // רכיב כרטיס צד ימין
+  // רכיב כרטיס צד ימין (הפרסומות)
   const InfoCard = ({ title, subtitle }: { title: string, subtitle?: string }) => (
-    <div className="bg-[#111426] p-6 rounded-3xl flex flex-col items-center text-center w-full max-w-md mb-6 shadow-lg border border-slate-800/50">
+    <div className="bg-[#111426] p-6 rounded-3xl flex flex-col items-center text-center w-full max-w-md mb-5 shadow-xl border border-slate-800/60 transition-transform hover:scale-[1.01]">
         <h3 className="text-white font-bold text-lg mb-2">{title}</h3>
-        {subtitle && <p className="text-slate-300 text-lg font-bold mb-4">{subtitle}</p>}
-        <button className="bg-[#2A2F4A] hover:bg-[#363c5e] text-[#8B92FF] text-sm font-bold py-2 px-8 rounded-xl flex items-center gap-2 transition-colors">
-            Link <ExternalLink size={14} />
+        {subtitle && <p className="text-[#8B92FF] text-xl font-bold mb-5 tracking-wider">{subtitle}</p>}
+        <button className="bg-[#2A2F4A] hover:bg-[#363c5e] text-[#8B92FF] text-sm font-bold py-3 px-10 rounded-xl flex items-center gap-2 transition-all shadow-md hover:shadow-indigo-900/30">
+            Link <ExternalLink size={16} />
         </button>
     </div>
   );
 
   return (
-    // מיכל ראשי - רקע כהה מאוד, תופס את כל המסך, פריסת Flex
-    <div className="flex h-screen w-screen bg-[#080B14] text-white font-sans overflow-hidden">
+    // מיכל ראשי - רקע כהה מאוד
+    <div className="flex h-screen w-screen bg-[#080B14] text-white font-sans overflow-hidden font-inter">
 
       {/* === סרגל צד שמאל (Left Sidebar) === */}
-      <aside className="w-[380px] bg-[#111426] p-6 flex flex-col gap-8 border-r border-slate-800/30 relative z-10 shadow-2xl">
+      <aside className="w-[380px] bg-[#111426] p-6 flex flex-col gap-6 border-r border-slate-800/30 relative z-20 shadow-[5px_0_30px_rgba(0,0,0,0.5)]">
           {/* לוגו וכותרת */}
-          <div className="flex items-center gap-3 pl-2">
-              <div className="bg-[#8B92FF] p-2 rounded-lg">
-                <Headphones size={20} className="text-white" />
+          <div className="flex items-center gap-3 pl-2 mb-2">
+              <div className="bg-gradient-to-br from-[#6C72FF] to-[#8B92FF] p-2.5 rounded-xl shadow-lg shadow-indigo-500/20">
+                <Headphones size={22} className="text-white" />
               </div>
-              <h1 className="text-xl font-extrabold tracking-wide bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">LINGOLIVE PRO</h1>
+              <h1 className="text-xl font-extrabold tracking-widest bg-clip-text text-transparent bg-gradient-to-r from-white via-slate-200 to-slate-400">LINGOLIVE PRO</h1>
           </div>
 
-          {/* אזור בחירת שפות */}
-          <div className="flex flex-col gap-3 p-5 bg-[#1A1F36] rounded-[30px] border border-slate-700/30 shadow-inner">
+          {/* אזור בחירת שפות - עיצוב נקי וכהה */}
+          <div className="flex flex-col gap-1">
                {/* שפת מקור */}
-               <div className="flex flex-col gap-2">
-                  <label className="text-[11px] text-slate-400 ml-4 font-bold uppercase tracking-wider">NATIVE LANGUAGE</label>
+               <div className="flex flex-col gap-2 relative z-10">
+                  <label className="text-[10px] text-slate-400 ml-4 font-bold uppercase tracking-widest">NATIVE LANGUAGE</label>
                   <div className="relative">
                       <select
                           value={langA}
                           onChange={e => setLangA(e.target.value)}
-                          className="w-full appearance-none bg-[#111426] border border-slate-700/50 rounded-2xl px-4 py-3 pr-10 text-sm font-medium text-white outline-none focus:border-[#8B92FF] transition-all cursor-pointer shadow-sm"
+                          className="w-full appearance-none bg-[#0F121A] border border-slate-700/60 rounded-2xl px-5 py-4 pr-10 text-sm font-bold text-slate-200 outline-none focus:border-[#6C72FF] transition-all cursor-pointer shadow-inner hover:border-slate-600"
                       >
                           {LANGUAGES.map(l => <option key={l.code} value={l.code} className="bg-[#111426]">{l.label}</option>)}
                       </select>
@@ -168,20 +166,20 @@ const App: React.FC = () => {
                </div>
 
                {/* אייקון החלפה */}
-               <div className="flex justify-center -my-1 relative z-10">
-                  <div className="bg-[#2A2F4A] p-1.5 rounded-full border border-slate-600/50 shadow-md">
-                       <ArrowRightLeft size={14} className="text-slate-300" />
+               <div className="flex justify-center -my-3 relative z-20 pointer-events-none">
+                  <div className="bg-[#2A2F4A] p-2 rounded-full border-2 border-[#111426] shadow-md">
+                       <ArrowRightLeft size={16} className="text-slate-300" />
                   </div>
                </div>
 
                {/* שפת יעד */}
-                <div className="flex flex-col gap-2">
-                  <label className="text-[11px] text-slate-400 ml-4 font-bold uppercase tracking-wider">TARGET LANGUAGE</label>
+                <div className="flex flex-col gap-2 relative z-0">
+                  <label className="text-[10px] text-slate-400 ml-4 font-bold uppercase tracking-widest">TARGET LANGUAGE</label>
                   <div className="relative">
                       <select
                           value={langB}
                           onChange={e => setLangB(e.target.value)}
-                          className="w-full appearance-none bg-[#111426] border border-slate-700/50 rounded-2xl px-4 py-3 pr-10 text-sm font-medium text-white outline-none focus:border-[#8B92FF] transition-all cursor-pointer shadow-sm"
+                          className="w-full appearance-none bg-[#0F121A] border border-slate-700/60 rounded-2xl px-5 py-4 pr-10 text-sm font-bold text-slate-200 outline-none focus:border-[#6C72FF] transition-all cursor-pointer shadow-inner hover:border-slate-600"
                       >
                           {LANGUAGES.map(l => <option key={l.code} value={l.code} className="bg-[#111426]">{l.label}</option>)}
                       </select>
@@ -189,70 +187,72 @@ const App: React.FC = () => {
                </div>
           </div>
 
-          {/* גריד כפתורי מודולים */}
-          <div className="grid grid-cols-2 gap-4 mt-2">
-              {/* כפתור פעיל - LIVE TRANSLATION */}
-              <button className="bg-[#5D65F6] p-4 rounded-3xl flex flex-col items-center justify-center gap-3 shadow-lg shadow-indigo-500/30 transition-transform hover:scale-[1.02]">
-                  <Mic size={32} className="text-white" />
-                  <span className="text-[11px] font-extrabold text-center leading-tight tracking-wider">LIVE<br/>TRANSLATION</span>
+          {/* גריד כפתורי מודולים - עיצוב יוקרתי יותר */}
+          <div className="grid grid-cols-2 gap-4 mt-4">
+              {/* כפתור פעיל - LIVE TRANSLATION עם גרדיאנט וזוהר */}
+              <button className="bg-gradient-to-br from-[#6C72FF] to-[#8B92FF] p-5 rounded-[24px] flex flex-col items-center justify-center gap-3 shadow-xl shadow-indigo-500/40 transition-transform hover:scale-[1.03] relative overflow-hidden">
+                  <div className="absolute inset-0 bg-white/10 opacity-0 hover:opacity-100 transition-opacity"></div>
+                  <Mic size={34} className="text-white drop-shadow-sm" />
+                  <span className="text-[11px] font-extrabold text-center leading-tight tracking-wider text-white drop-shadow-sm">LIVE<br/>TRANSLATION</span>
               </button>
-              {/* כפתורים לא פעילים (ויזואלית בלבד) */}
-              <button className="bg-[#1A1F36] border border-slate-700/30 p-4 rounded-3xl flex flex-col items-center justify-center gap-3 opacity-80 hover:opacity-100 transition-all hover:border-slate-500">
-                  <Headphones size={32} className="text-slate-500" />
-                  <span className="text-[11px] font-bold text-slate-400 text-center leading-tight tracking-wider">SIMULTANEOUS<br/>TRANS</span>
-              </button>
-              <button className="bg-[#1A1F36] border border-slate-700/30 p-4 rounded-3xl flex flex-col items-center justify-center gap-3 opacity-80 hover:opacity-100 transition-all hover:border-slate-500">
-                  <MessageCircle size={32} className="text-slate-500" />
-                  <span className="text-[11px] font-bold text-slate-400 text-center leading-tight tracking-wider">CHAT<br/>CONVERSATION</span>
-              </button>
-              <button className="bg-[#1A1F36] border border-slate-700/30 p-4 rounded-3xl flex flex-col items-center justify-center gap-3 opacity-80 hover:opacity-100 transition-all hover:border-slate-500">
-                  <GraduationCap size={32} className="text-slate-500" />
-                  <span className="text-[11px] font-bold text-slate-400 text-center leading-tight tracking-wider">LANGUAGE<br/>LEARNING</span>
-              </button>
+              {/* כפתורים לא פעילים - כהים ואחידים */}
+              {[
+                { icon: Headphones, text: "SIMULTANEOUS\nTRANS" },
+                { icon: MessageCircle, text: "CHAT\nCONVERSATION" },
+                { icon: GraduationCap, text: "LANGUAGE\nLEARNING" }
+              ].map((Btn, idx) => (
+                <button key={idx} className="bg-[#1A1F36] border border-slate-800/80 p-5 rounded-[24px] flex flex-col items-center justify-center gap-3 transition-all hover:border-[#6C72FF]/50 hover:bg-[#202640] group">
+                    <Btn.icon size={34} className="text-slate-500 group-hover:text-slate-300 transition-colors" />
+                    <span className="text-[11px] font-bold text-slate-500 group-hover:text-slate-400 text-center leading-tight tracking-wider transition-colors whitespace-pre-wrap">{Btn.text}</span>
+                </button>
+              ))}
           </div>
 
-          {/* אזור אווטאר משתמש */}
-          <div className="mt-auto mb-4 flex justify-center">
-               {/* תמונה זמנית - יש להחליף לתמונת המשתמש האמיתית */}
-              <img
-                  src="https://i.pravatar.cc/150?img=47"
-                  alt="User Avatar"
-                  className="w-24 h-24 rounded-full border-4 border-[#1A1F36] shadow-xl"
-              />
+          {/* אזור אווטאר משתמש - מסגרת עגולה מעוצבת */}
+          <div className="mt-auto mb-2 flex justify-center relative">
+               {/* הוספת טבעת גרדיאנט מסביב לתמונה */}
+               <div className="p-[3px] rounded-full bg-gradient-to-tr from-[#6C72FF] via-[#8B92FF] to-[#A7ADFF] shadow-lg shadow-indigo-500/30">
+                  <img
+                      src="https://i.pravatar.cc/150?img=47" // החלף בתמונה האמיתית
+                      alt="User Avatar"
+                      className="w-28 h-28 rounded-full border-4 border-[#111426]"
+                  />
+               </div>
           </div>
 
           {/* הודעת שגיאה */}
           {error && (
-              <div className="text-red-400 text-xs text-center flex items-center justify-center gap-1 animate-pulse absolute bottom-24 left-0 right-0">
-                  <StopCircle size={12} /> {error}
+              <div className="text-red-400 text-xs font-bold text-center flex items-center justify-center gap-2 animate-pulse absolute bottom-[85px] left-0 right-0 bg-red-950/50 py-1">
+                  <StopCircle size={14} /> {error}
               </div>
           )}
 
-          {/* כפתור התחל ראשי (Start Button) */}
+          {/* כפתור התחל ראשי - בולט ויפה יותר */}
           <button
             onClick={handleToggle}
-            className={`w-full py-4 rounded-full font-bold text-xl shadow-xl transition-all hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-3 ${
+            className={`w-full py-5 rounded-full font-extrabold text-xl shadow-2xl transition-all hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-4 relative overflow-hidden ${
                 isActive
-                    ? 'bg-gradient-to-r from-red-500 to-red-600 shadow-red-500/30'
-                    : 'bg-[#5D65F6] hover:bg-[#6C72FF] shadow-indigo-500/40'
+                    ? 'bg-gradient-to-r from-red-500 to-red-700 shadow-red-600/40'
+                    : 'bg-gradient-to-r from-[#6C72FF] to-[#8B92FF] shadow-indigo-600/50'
             }`}
           >
-            {isActive ? <StopCircle size={22} /> : <Mic size={22} />}
-            <span className="tracking-wide">
+            <div className="absolute inset-0 bg-white/20 opacity-0 hover:opacity-100 transition-opacity"></div>
+            {isActive ? <StopCircle size={26} className="drop-shadow" /> : <Mic size={26} className="drop-shadow" />}
+            <span className="tracking-widest drop-shadow-sm">
             {isActive
-                ? (appState === 'listening' ? 'Listening...' : appState === 'processing' ? 'Translating...' : appState === 'speaking' ? 'Speaking...' : 'Stop')
-                : 'Start'
+                ? (appState === 'listening' ? 'LISTENING...' : appState === 'processing' ? 'TRANSLATING...' : appState === 'speaking' ? 'SPEAKING...' : 'STOP')
+                : 'START'
             }
             </span>
           </button>
       </aside>
 
-      {/* === תוכן ראשי בצד ימין (Right Main Content) === */}
-      <main className="flex-1 bg-[#080B14] p-12 flex flex-col items-end justify-center relative overflow-y-auto">
-          {/* אפקט רקע עדין */}
-          <div className="absolute inset-0 bg-gradient-to-br from-[#080B14] via-[#080B14] to-[#111426] pointer-events-none"></div>
+      {/* === תוכן ראשי בצד ימין (הפרסומות) === */}
+      <main className="flex-1 bg-[#080B14] p-12 flex flex-col items-end justify-center relative overflow-y-auto z-10">
+          {/* אפקט רקע עדין בצד ימין */}
+          <div className="absolute inset-0 bg-gradient-to-bl from-[#111426] via-[#080B14] to-[#080B14] pointer-events-none"></div>
 
-          <div className="z-10 w-full flex flex-col items-end gap-4 pr-8">
+          <div className="z-20 w-full flex flex-col items-end pr-10">
               {/* כרטיס ראשון - הפרטים בעברית */}
               <InfoCard
                   title='מאיר גלעד-מומחה לנדל"ן מסחרי -'
