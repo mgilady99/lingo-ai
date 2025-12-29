@@ -48,23 +48,73 @@ export default function App() {
   }, []);
 
   const speak = useCallback((text: string, langCode: string) => {
+    // ביטול כל דיבור קודם
     window.speechSynthesis.cancel();
+
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = langCode;
-    
-    // בחירת קול מתאים
-    const voices = window.speechSynthesis.getVoices();
-    const voice = voices.find(v => v.lang.startsWith(langCode.split('-')[0]));
-    if (voice) utterance.voice = voice;
+    utterance.rate = 1; // מהירות רגילה
+
+    // פונקציה פנימית לבחירת קול
+    const selectVoice = () => {
+      const voices = window.speechSynthesis.getVoices();
+      console.log(`נמצאו ${voices.length} קולות זמינים.`);
+
+      if (voices.length === 0) {
+        console.warn("לא נמצאו קולות דיבור. ייתכן שהדפדפן עדיין טוען אותם.");
+        return;
+      }
+
+      // ניסיון למצוא קול מועדף (למשל של גוגל) התואם לשפה
+      let preferredVoice = voices.find(v => 
+        v.lang.startsWith(langCode.split('-')[0]) && v.name.includes('Google')
+      );
+
+      // אם לא נמצא קול מועדף, קח כל קול שמתאים לשפה
+      if (!preferredVoice) {
+        preferredVoice = voices.find(v => v.lang.startsWith(langCode.split('-')[0]));
+      }
+
+      if (preferredVoice) {
+        console.log(`נבחר קול: ${preferredVoice.name} לשפה ${langCode}`);
+        utterance.voice = preferredVoice;
+      } else {
+        console.warn(`לא נמצא קול מתאים לשפה ${langCode}. משתמש בקול ברירת המחדל.`);
+      }
+
+      // הפעלת הדיבור
+      window.speechSynthesis.speak(utterance);
+    };
+
+    // בדיקה אם הקולות כבר טעונים
+    if (window.speechSynthesis.getVoices().length > 0) {
+      selectVoice();
+    } else {
+      // אם לא, נרשם לאירוע טעינת הקולות ונפעיל כשיסתיים
+      console.log("ממתין לטעינת קולות...");
+      window.speechSynthesis.onvoiceschanged = () => {
+        console.log("הקולות נטענו.");
+        selectVoice();
+      };
+    }
 
     utterance.onend = () => {
+      console.log("הדיבור הסתיים.");
       if (isActiveRef.current) {
         setAppState("listening");
         startListening();
       }
     };
+
+    utterance.onerror = (event) => {
+      console.error("שגיאה בדיבור:", event);
+      if (isActiveRef.current) {
+        setAppState("listening");
+        startListening();
+      }
+    };
+
     setAppState("speaking");
-    window.speechSynthesis.speak(utterance);
   }, []);
 
   const startListening = useCallback(() => {
