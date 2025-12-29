@@ -2,10 +2,8 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Mic, MicOff, Headphones, LogOut, MessageSquare, AlertCircle } from 'lucide-react';
 
-// ✅ תיקון נתיבים לפי התמונה שלך (יוצאים מ-src החוצה)
+// ✅ נתיבים לפי מבנה התיקיות שלך
 import { decode, decodeAudioData, createPcmBlob } from '../services/audioService';
-
-// ✅ תיקון שמות קבצים לפי התמונה (Avatar ו-AudioVisualizer באות גדולה, transcriptitem בקטנה)
 import Avatar from '../components/Avatar';
 import AudioVisualizer from '../components/AudioVisualizer';
 import TranscriptItem from '../components/transcriptitem';
@@ -34,7 +32,6 @@ const App: React.FC = () => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const apiKey = import.meta.env.VITE_API_KEY;
 
-  // גלילה אוטומטית
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -60,7 +57,6 @@ const App: React.FC = () => {
       setError(null);
       setStatus("connecting");
       
-      // בדיקת מיקרופון
       await navigator.mediaDevices.getUserMedia({ audio: true });
       
       const genAI = new GoogleGenerativeAI(apiKey);
@@ -68,11 +64,10 @@ const App: React.FC = () => {
 
       setStatus("connected");
       
-      // הודעת פתיחה
+      // ✅ תיקון: הוספת timestamp להודעת הפתיחה למניעת קריסה
       const intro = "Hello! I am LINGO-AI. Let's start practicing English.";
-      setTranscript([{ role: 'model', text: intro }]);
+      setTranscript([{ role: 'model', text: intro, timestamp: new Date() }]);
       
-      // דיבור הודעת הפתיחה
       speakResponse(intro, model);
       
     } catch (e: any) {
@@ -86,13 +81,12 @@ const App: React.FC = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) return;
 
-    // עצירת כל האזנה קודמת
     if (recognitionRef.current) {
         try { recognitionRef.current.stop(); } catch(e) {}
     }
 
     const recognition = new SpeechRecognition();
-    recognition.lang = 'en-US'; // מקשיב לאנגלית
+    recognition.lang = 'en-US'; 
     recognition.continuous = false;
     recognition.interimResults = false;
 
@@ -103,12 +97,14 @@ const App: React.FC = () => {
     recognition.onresult = async (event: any) => {
       const text = event.results[0][0].transcript;
       console.log("User said:", text);
+      // ✅ הוספת timestamp גם כאן
       setTranscript(prev => [...prev, { role: 'user', text, timestamp: new Date() }]);
       
       try {
         const result = await model.generateContent(`You are an English tutor. Keep answers short (1-2 sentences). User said: "${text}".`);
         const aiText = result.response.text();
         console.log("AI response:", aiText);
+        // ✅ הוספת timestamp גם לתגובת ה-AI
         setTranscript(prev => [...prev, { role: 'model', text: aiText, timestamp: new Date() }]);
         speakResponse(aiText, model);
       } catch (err) {
@@ -130,12 +126,10 @@ const App: React.FC = () => {
   };
 
   const speakResponse = (text: string, model: any) => {
-    // 1. עוצרים את המיקרופון
     if (recognitionRef.current) {
       try { recognitionRef.current.stop(); } catch(e) {}
     }
 
-    // 2. מכינים את הדיבור
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'en-US';
     utterance.rate = 1.0;
@@ -144,13 +138,11 @@ const App: React.FC = () => {
     
     utterance.onend = () => {
       setIsSpeaking(false);
-      // 3. רק כשהיא סיימה לדבר - מתחילים להקשיב שוב
       if (status === "connected") {
-        setTimeout(() => initListening(model), 200); // השהייה קטנה למניעת באגים
+        setTimeout(() => initListening(model), 200); 
       }
     };
 
-    // 4. מבטלים דיבורים קודמים ומדברים
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utterance);
   };
