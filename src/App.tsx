@@ -1,13 +1,14 @@
+
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { Mic, LogOut, Settings, Globe, StopCircle, PlayCircle } from 'lucide-react';
+import { Mic, LogOut, Globe, StopCircle, PlayCircle, ArrowRightLeft, ChevronDown } from 'lucide-react';
 
 // --- הגדרות (ללא תלות בקבצים חיצוניים) ---
 const getApiKey = () => {
   try { return import.meta.env.VITE_API_KEY; } catch (e) { return ""; }
 };
 
-// רשימת 13 השפות
+// רשימת 13 השפות עם דגלים
 const LANGUAGES = [
   { code: 'he-IL', name: 'Hebrew', label: '🇮🇱 עברית' },
   { code: 'en-US', name: 'English', label: '🇺🇸 English' },
@@ -24,38 +25,26 @@ const LANGUAGES = [
   { code: 'hi-IN', name: 'Hindi', label: '🇮🇳 हिन्दी' },
 ];
 
-// רכיב אווטאר פנימי (כמו בתמונה, ללא תלות חיצונית)
-const Avatar = ({ state }: { state: string }) => {
-  let color = 'bg-slate-800 border-slate-700';
-  let glow = '';
+// רכיב אווטאר מרכזי וגדול
+const BigAvatar = ({ state }: { state: string }) => {
+  let wrapperClass = 'border-slate-800 bg-slate-900';
+  let innerClass = 'opacity-20';
   
   if (state === 'listening') {
-    color = 'bg-green-600 border-green-400';
-    glow = 'shadow-[0_0_50px_rgba(34,197,94,0.6)]';
+    wrapperClass = 'border-green-500 shadow-[0_0_80px_rgba(34,197,94,0.4)] bg-green-950/30 animate-pulse-slow';
+    innerClass = 'text-green-400 opacity-100 animate-bounce-slight';
   } else if (state === 'speaking') {
-    color = 'bg-indigo-600 border-indigo-400';
-    glow = 'shadow-[0_0_60px_rgba(99,102,241,0.7)]';
+    wrapperClass = 'border-indigo-500 shadow-[0_0_100px_rgba(99,102,241,0.5)] bg-indigo-950/30 scale-105 transition-transform duration-500';
+    innerClass = 'text-indigo-400 opacity-100';
   } else if (state === 'processing') {
-    color = 'bg-amber-600 animate-pulse border-amber-400';
+    wrapperClass = 'border-amber-500 animate-pulse bg-amber-950/30';
+    innerClass = 'text-amber-400 opacity-80 animate-spin-slow';
   }
 
   return (
-    <div className={`relative w-56 h-56 rounded-full flex items-center justify-center transition-all duration-500 border-[6px] ${color} ${glow}`}>
-      <div className="absolute inset-2 rounded-full border-2 border-white/20"></div>
-      
-      {state === 'speaking' ? (
-         <div className="flex gap-1.5 h-14 items-center">
-            <div className="w-2.5 h-full bg-white rounded-full animate-[bounce_1s_infinite]"></div>
-            <div className="w-2.5 h-2/3 bg-white rounded-full animate-[bounce_1.2s_infinite]"></div>
-            <div className="w-2.5 h-full bg-white rounded-full animate-[bounce_0.8s_infinite]"></div>
-         </div>
-      ) : state === 'listening' ? (
-         <Mic size={70} className="text-white animate-pulse" />
-      ) : state === 'processing' ? (
-         <Globe size={70} className="text-white animate-spin-slow" />
-      ) : (
-         <span className="text-7xl font-black text-white/30 select-none">AI</span>
-      )}
+    <div className={`relative w-72 h-72 rounded-full flex items-center justify-center transition-all duration-500 border-[8px] ${wrapperClass}`}>
+      <div className="absolute inset-4 rounded-full border-4 border-white/5"></div>
+      <Globe size={120} className={`transition-all duration-500 ${innerClass}`} />
     </div>
   );
 };
@@ -65,18 +54,28 @@ const App: React.FC = () => {
   const [isActive, setIsActive] = useState(false);
   const [appState, setAppState] = useState<'idle' | 'listening' | 'processing' | 'speaking'>('idle');
   const [langA, setLangA] = useState('he-IL');
-  const [langB, setLangB] = useState('it-IT'); // ברירת מחדל: איטלקית
+  const [langB, setLangB] = useState('en-US');
   const [error, setError] = useState<string | null>(null);
   
   const recognitionRef = useRef<any>(null);
   const isSessionActiveRef = useRef(false);
 
-  // --- אתחול ---
+  // --- אתחול קולות ---
   useEffect(() => {
     const loadVoices = () => { window.speechSynthesis.getVoices(); };
     loadVoices();
     window.speechSynthesis.onvoiceschanged = loadVoices;
   }, []);
+
+  // --- תיקון הבאג הקריטי: אתחול מנוע זיהוי בעת שינוי שפה ---
+  useEffect(() => {
+    if (isActive && appState === 'listening') {
+        // אם אנחנו באמצע הקשבה והשפה השתנתה, נעצור ונתחיל מחדש
+        if (recognitionRef.current) try { recognitionRef.current.stop(); } catch(e){}
+        // ה-onend יפעיל מחדש את ההקשבה עם השפה החדשה
+    }
+  }, [langA]);
+
 
   // --- לוגיקת ליבה ---
   const stopSession = useCallback(() => {
@@ -97,7 +96,7 @@ const App: React.FC = () => {
     if (recognitionRef.current) try { recognitionRef.current.stop(); } catch(e){}
 
     const recognition = new SpeechRecognition();
-    recognition.lang = langA; // מקשיב לשפה הראשית
+    recognition.lang = langA; // משתמש בשפת המקור המעודכנת
     recognition.continuous = false;
     recognition.interimResults = false;
 
@@ -114,8 +113,12 @@ const App: React.FC = () => {
     };
 
     recognition.onend = () => {
-        if (isSessionActiveRef.current && appState === 'listening') {
-            try { recognition.start(); } catch(e){}
+        // לולאה: אם הסשן פעיל, חזור להקשיב
+        if (isSessionActiveRef.current) {
+            // בדיקה קצרה כדי לוודא שלא עברנו למצב דיבור בינתיים
+            if (appState !== 'speaking' && appState !== 'processing') {
+                 try { recognition.start(); } catch(e){}
+            }
         }
     };
     
@@ -129,9 +132,9 @@ const App: React.FC = () => {
     };
 
     try { recognition.start(); recognitionRef.current = recognition; } catch(e) {}
-  }, [langA, appState]);
+  }, [langA, appState]); // תלות ב-langA מבטיחה עדכון
 
-  // --- פונקציית התרגום (התיקון הקריטי) ---
+  // --- פונקציית התרגום (עם פרומפט מתוקן) ---
   const processTranslation = async (text: string) => {
     try {
       const apiKey = getApiKey();
@@ -142,12 +145,12 @@ const App: React.FC = () => {
       const nameA = LANGUAGES.find(l => l.code === langA)?.name || 'Unknown';
       const nameB = LANGUAGES.find(l => l.code === langB)?.name || 'Unknown';
 
-      // --- הפרומפט המתוקן ---
-      // משתמש בשמות השפות באופן מפורש וישיר
+      // פרומפט חד משמעי המשתמש בשמות השפות
       const prompt = `
-        Task: Translate the following text from ${nameA} to ${nameB}.
-        Constraint 1: Output ONLY the translated text.
-        Constraint 2: Do not add explanations or repeat the input.
+        Task: Translate the following input text specifically from ${nameA} to ${nameB}.
+        Rules:
+        1. Output ONLY the final translated text.
+        2. Do not provide explanations, notes, or repeat the input.
         Input Text: "${text}"
       `;
       
@@ -173,13 +176,12 @@ const App: React.FC = () => {
     setAppState("speaking");
 
     const utterance = new SpeechSynthesisUtterance(text);
-    // תמיד משמיע בשפת היעד
-    utterance.lang = langB;
+    utterance.lang = langB; // תמיד מדבר בשפת היעד
 
     utterance.onend = () => {
       if (isSessionActiveRef.current) {
         setAppState("listening");
-        startListening();
+        startListening(); // חזרה ללולאה
       }
     };
     
@@ -200,103 +202,93 @@ const App: React.FC = () => {
     }
   };
 
-  // --- UI (עיצוב "ננו בננה" נקי) ---
-  const langNameA = LANGUAGES.find(l=>l.code===langA)?.label;
-  const langNameB = LANGUAGES.find(l=>l.code===langB)?.label;
-
+  // --- UI מעוצב מחדש (מרכזי, נקי, קונטרסטי) ---
   return (
-    <div className="h-screen w-screen bg-[#0a0f1e] text-slate-100 flex flex-col items-center justify-center p-8 font-sans" dir="ltr">
+    // רקע כהה אחיד ונקי
+    <div className="h-screen w-screen bg-[#0B0F1A] text-slate-100 flex flex-col items-center justify-between p-6 font-sans overflow-hidden relative">
       
       {/* כותרת עליונה */}
-      <header className="absolute top-8 flex items-center gap-3 bg-[#141b2d] px-5 py-2.5 rounded-full border border-white/10 shadow-xl z-20">
-          <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center font-black text-white italic shadow-lg">L</div>
-          <h1 className="text-lg font-black tracking-tight text-white">LINGOLIVE PRO</h1>
+      <header className="mt-4 flex items-center gap-2 opacity-80">
+          <Globe size={24} className="text-indigo-500" />
+          <h1 className="text-xl font-black tracking-[0.2em] text-white uppercase">LingoLive Pro</h1>
       </header>
 
-      {/* סטטוס */}
-      <div className="absolute top-8 right-8 flex items-center gap-3 bg-[#141b2d] px-4 py-2 rounded-full border border-white/10 shadow-xl z-20">
-          <div className={`w-2.5 h-2.5 rounded-full ${isActive ? 'bg-green-500 animate-pulse shadow-[0_0_10px_rgba(34,197,94,0.5)]' : 'bg-slate-500'}`} />
-          <span className="text-xs font-bold uppercase tracking-widest text-slate-300">
-            {isActive ? appState : 'READY'}
-          </span>
-      </div>
-
-      {/* מרכז המסך - אווטאר ובחירת שפות */}
-      <div className="flex flex-col items-center gap-10 z-10 -mt-10">
+      {/* איזור מרכזי */}
+      <main className="flex-1 flex flex-col items-center justify-center w-full max-w-2xl gap-12 -mt-16">
           
-          {/* אווטאר */}
-          <Avatar state={appState} />
+          {/* אווטאר ענק במרכז */}
+          <BigAvatar state={appState} />
 
-          {/* טקסט סטטוס ראשי */}
-          <div className="text-center h-16">
-            <h2 className="text-4xl font-black text-white tracking-tight leading-tight drop-shadow-2xl">
-               {appState === 'listening' && "אני מקשיב..."}
-               {appState === 'processing' && "מתרגם..."}
-               {appState === 'speaking' && "מדבר..."}
-               {appState === 'idle' && "מוכנים?"}
-            </h2>
-          </div>
+          {/* סטטוס טקסטואלי */}
+          <h2 className="text-5xl font-black text-white tracking-tight h-16 transition-all text-center drop-shadow-2xl">
+             {appState === 'listening' && "אני מקשיב..."}
+             {appState === 'processing' && "מתרגם..."}
+             {appState === 'speaking' && "מדבר..."}
+             {appState === 'idle' && "מוכנים לתרגם?"}
+          </h2>
 
-          {/* בוררי שפות - גדולים וברורים */}
-          <div className="flex items-center gap-4 bg-[#141b2d] p-3 rounded-3xl border border-white/10 shadow-2xl">
+          {/* בוררי שפות - גדולים, ברורים, קונטרסטיים */}
+          <div className="w-full flex items-center justify-between bg-[#131b2e] p-3 rounded-[2rem] border-2 border-[#1e293b] shadow-2xl relative">
               
-              <div className="relative">
+              {/* שפת מקור */}
+              <div className="relative flex-1">
                 <select 
                     value={langA} 
-                    onChange={e => setLangA(e.target.value)} 
-                    disabled={isActive}
-                    className="appearance-none bg-[#0a0f1e] border border-slate-700 rounded-2xl py-3 pl-4 pr-10 text-lg font-bold text-white outline-none focus:border-indigo-500 transition-all cursor-pointer disabled:opacity-50 hover:bg-[#1e293b]"
+                    onChange={e => setLangA(e.target.value)}
+                    className="w-full appearance-none bg-[#0B0F1A] border-2 border-[#1e293b] rounded-[1.5rem] py-4 pl-6 pr-12 text-xl font-bold text-white outline-none focus:border-indigo-500 transition-all cursor-pointer hover:bg-[#1e293b] hover:border-indigo-500/50"
                 >
-                {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
+                {LANGUAGES.map(l => <option key={l.code} value={l.code} className="bg-[#0B0F1A] text-lg">{l.label}</option>)}
                 </select>
-                <Globe size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <ChevronDown size={20} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
               </div>
 
-              <div className="text-2xl text-indigo-500 animate-pulse">➔</div>
+              {/* אייקון מעבר */}
+              <div className="px-4 text-slate-500">
+                <ArrowRightLeft size={28} />
+              </div>
 
-              <div className="relative">
+              {/* שפת יעד */}
+              <div className="relative flex-1">
                 <select 
                     value={langB} 
-                    onChange={e => setLangB(e.target.value)} 
-                    disabled={isActive}
-                    className="appearance-none bg-[#0a0f1e] border border-slate-700 rounded-2xl py-3 pl-4 pr-10 text-lg font-bold text-white outline-none focus:border-indigo-500 transition-all cursor-pointer disabled:opacity-50 hover:bg-[#1e293b]"
+                    onChange={e => setLangB(e.target.value)}
+                    className="w-full appearance-none bg-[#0B0F1A] border-2 border-[#1e293b] rounded-[1.5rem] py-4 pl-6 pr-12 text-xl font-bold text-white outline-none focus:border-indigo-500 transition-all cursor-pointer hover:bg-[#1e293b] hover:border-indigo-500/50"
                 >
-                {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
+                {LANGUAGES.map(l => <option key={l.code} value={l.code} className="bg-[#0B0F1A] text-lg">{l.label}</option>)}
                 </select>
-                <Globe size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <ChevronDown size={20} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
               </div>
 
           </div>
-      </div>
+      </main>
 
-      {/* כפתור פעולה ראשי */}
-      <div className="absolute bottom-14 w-full max-w-md px-6 z-20">
+      {/* כפתור פעולה ראשי - ענק בתחתית */}
+      <footer className="w-full max-w-lg mb-6 relative z-20">
            {error && (
-             <div className="flex items-center gap-3 text-red-300 text-sm font-bold justify-center mb-6 bg-red-900/30 p-4 rounded-xl border border-red-500/30 animate-pulse shadow-lg">
+             <div className="absolute -top-16 left-1/2 -translate-x-1/2 flex items-center gap-2 text-red-300 text-sm font-bold bg-red-950/80 p-3 rounded-full border border-red-500/50 animate-pulse whitespace-nowrap">
                <StopCircle size={18} /> {error}
              </div>
            )}
            
            <button 
              onClick={handleToggle} 
-             className={`group w-full py-6 rounded-[3rem] font-black text-2xl shadow-2xl transition-all hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-4 relative overflow-hidden ${
+             className={`group w-full py-7 rounded-[3.5rem] font-black text-3xl shadow-2xl transition-all hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-4 relative overflow-hidden border-4 ${
                 isActive 
-                ? 'bg-gradient-to-r from-red-600 to-pink-700 shadow-[0_20px_60px_-10px_rgba(220,38,38,0.6)] border border-red-400/30' 
-                : 'bg-gradient-to-r from-indigo-600 to-violet-700 shadow-[0_20px_60px_-10px_rgba(79,70,229,0.6)] border border-indigo-400/30'
+                ? 'bg-red-600 border-red-500 shadow-[0_10px_40px_rgba(220,38,38,0.5)]' 
+                : 'bg-indigo-600 border-indigo-500 shadow-[0_10px_40px_rgba(79,70,229,0.5)]'
              }`}
            >
-             <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
              {isActive ? (
                 <>
-                    <LogOut size={32} /> עצור תרגום
+                    <LogOut size={36} /> STOP
                 </>
              ) : (
                 <>
-                    <PlayCircle size={32} /> התחל תרגום
+                    <PlayCircle size={36} /> START
                 </>
              )}
            </button>
-      </div>
+      </footer>
 
     </div>
   );
