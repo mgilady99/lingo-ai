@@ -231,77 +231,66 @@ const App: React.FC = () => {
   return (
     <div className="h-screen w-screen bg-[#020617] text-slate-200 flex flex-col md:flex-row overflow-hidden font-sans" dir="ltr">
       
-      {/* Sidebar - כמו בתמונה */}
+      {/* Sidebar - נקי ללא צ'אט */}
       <aside className="w-full md:w-96 h-full bg-[#0f172a] border-r border-white/5 p-6 flex flex-col gap-6 shadow-2xl z-20 relative">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 mb-4">
           <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center font-black text-white text-xl shadow-lg shadow-indigo-500/20">L</div>
           <h1 className="text-xl font-black italic tracking-tighter text-white">LINGOLIVE PRO</h1>
         </div>
 
-        <div className="bg-slate-800/40 p-5 rounded-2xl border border-white/5 space-y-6">
-          <div className="flex items-center gap-2 text-indigo-400 mb-2">
-            <Settings size={16} /> <span className="text-xs font-bold uppercase tracking-wider">Configuration</span>
-          </div>
-
-          <div className="space-y-2">
-             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Module</label>
-             <select 
-                value={selectedModuleId} 
-                onChange={e => setSelectedModuleId(e.target.value)} 
-                disabled={isActive}
-                className="w-full bg-[#020617] border border-slate-700 rounded-xl p-3 text-xs text-white outline-none focus:border-indigo-500 transition-all font-bold appearance-none cursor-pointer"
-             >
-               {MODULES.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-             </select>
-          </div>
-
-          <div className="space-y-2">
-             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">First Language (Mic)</label>
-             <select 
-                value={langA} 
-                onChange={e => setLangA(e.target.value)} 
-                disabled={isActive}
-                className="w-full bg-[#020617] border border-slate-700 rounded-xl p-3 text-xs text-white outline-none focus:border-indigo-500 transition-all font-bold appearance-none cursor-pointer"
-             >
-               {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
-             </select>
-          </div>
+        <div className="bg-slate-800/40 p-6 rounded-3xl border border-white/5 space-y-8 flex-1">
           
-          <div className="space-y-2">
-             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Second Language (AI)</label>
-             <select 
-                value={langB} 
-                onChange={e => setLangB(e.target.value)} 
-                disabled={isActive}
-                className="w-full bg-[#020617] border border-slate-700 rounded-xl p-3 text-xs text-white outline-none focus:border-indigo-500 transition-all font-bold appearance-none cursor-pointer"
-             >
-               {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
-             </select>
+          <div className="space-y-3">
+             <div className="flex items-center gap-2 text-indigo-400 mb-2">
+                <Settings size={18} /> <span className="text-xs font-black uppercase tracking-wider">Settings</span>
+             </div>
+             
+             <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Module</label>
+                <select 
+                    value={selectedModuleId} 
+                    onChange={e => setSelectedModuleId(e.target.value)} 
+                    disabled={isActive}
+                    className="w-full bg-[#020617] border border-slate-700/50 rounded-2xl p-4 text-sm text-white outline-none focus:border-indigo-500 transition-all font-bold appearance-none cursor-pointer hover:bg-slate-900/50"
+                >
+                {MODULES.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+             </div>
           </div>
-        </div>
 
-        <div className="flex-1 flex flex-col min-h-0 bg-slate-800/20 rounded-xl border border-white/5 overflow-hidden">
-           <div className="p-3 bg-slate-800/50 border-b border-white/5 flex items-center gap-2">
-             <MessageSquare size={14} className="text-indigo-400"/>
-             <span className="text-[10px] font-bold uppercase tracking-wider">Live Transcript</span>
-           </div>
-           <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-4 scrollbar-thin scrollbar-thumb-slate-700">
-             {transcript.length === 0 && (
-               <div className="text-center text-slate-600 text-xs mt-10 opacity-50">Transcript will appear here...</div>
-             )}
-             {transcript.map((t, i) => (
-               <div key={i} className={`flex flex-col gap-1 p-3 rounded-xl text-xs max-w-[90%] shadow-sm ${t.role==='user'?'bg-indigo-600/20 border border-indigo-500/30 self-end ml-auto rounded-br-none':'bg-slate-700/50 border border-slate-600/30 mr-auto rounded-bl-none'}`}>
-                 <div className="flex justify-between opacity-70 text-[9px] font-bold uppercase tracking-wider">
-                    <span className={t.role === 'user' ? 'text-indigo-300' : 'text-slate-300'}>{t.role === 'user' ? 'You' : 'AI'}</span>
-                 </div>
-                 <p className="leading-relaxed">{t.text}</p>
-               </div>
-             ))}
-           </div>
+          <div className="space-y-5">
+            <div className="flex items-center gap-2 text-indigo-400 mb-2">
+                <Globe size={18} /> <span className="text-xs font-black uppercase tracking-wider">Languages</span>
+             </div>
+
+            <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Primary (Mic)</label>
+                <select 
+                    value={langA} 
+                    onChange={e => setLangA(e.target.value)} 
+                    disabled={isActive}
+                    className="w-full bg-[#020617] border border-slate-700/50 rounded-2xl p-4 text-sm text-white outline-none focus:border-indigo-500 transition-all font-bold appearance-none cursor-pointer hover:bg-slate-900/50"
+                >
+                {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
+                </select>
+            </div>
+            
+            <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Secondary (AI)</label>
+                <select 
+                    value={langB} 
+                    onChange={e => setLangB(e.target.value)} 
+                    disabled={isActive}
+                    className="w-full bg-[#020617] border border-slate-700/50 rounded-2xl p-4 text-sm text-white outline-none focus:border-indigo-500 transition-all font-bold appearance-none cursor-pointer hover:bg-slate-900/50"
+                >
+                {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
+                </select>
+            </div>
+          </div>
         </div>
       </aside>
 
-      {/* Main Screen - כמו בתמונה */}
+      {/* Main Screen - עיצוב חדש כמו בתמונה */}
       <main className="flex-1 h-full flex flex-col relative items-center justify-center p-8 bg-gradient-to-br from-[#020617] via-[#0f172a] to-[#1e293b]">
         
         {/* Status Pill */}
@@ -315,7 +304,7 @@ const App: React.FC = () => {
         {/* Center UI - Visualizer & Text */}
         <div className="flex flex-col items-center gap-12 z-10 -mt-16">
           
-          {/* Visualizer Area */}
+          {/* Visualizer Area - כמו בתמונה */}
           <div className={`relative w-80 h-80 rounded-full flex items-center justify-center transition-all duration-700 ${
                isActive ? 'bg-gradient-to-br from-indigo-900/50 to-purple-900/50 shadow-[0_0_120px_rgba(99,102,241,0.3)] border border-indigo-500/30' : 'bg-slate-900/50 border border-white/5'
           }`}>
@@ -323,6 +312,7 @@ const App: React.FC = () => {
                <div className="absolute inset-0 bg-grid-white/[0.02] bg-[length:30px_30px] rounded-full opacity-50"></div>
                
                {isActive ? (
+                  // הוויזואליזציה פועלת כשיש הקשבה או דיבור
                   <AudioWaveform animate={appState === 'speaking' || appState === 'listening'} />
                ) : (
                   <Globe size={100} className="text-white/10" />
@@ -350,7 +340,7 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        {/* Action Button - כמו בתמונה */}
+        {/* Action Button - עיצוב חדש כמו בתמונה */}
         <div className="absolute bottom-16 w-full max-w-md px-6 z-20">
            {error && (
              <div className="flex items-center gap-3 text-red-300 text-xs font-bold justify-center mb-6 bg-red-500/10 p-4 rounded-xl border border-red-500/20 animate-pulse shadow-lg">
