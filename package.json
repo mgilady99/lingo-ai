@@ -1,3 +1,4 @@
+
 {
   "name": "lingolive-pro",
   "private": true,
@@ -10,7 +11,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@google/genai": "^0.21.0",
+    "@google/genai": "^0.2.1",
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
