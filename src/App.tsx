@@ -2,31 +2,28 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Mic, MicOff, LogOut, MessageSquare } from 'lucide-react';
 
-// ייבוא נכון לפי המבנה שלך (יציאה לשורש)
+// נתיבים לפי עץ הקבצים שלך (רכיבים בשורש)
 import { decode, decodeAudioData, createPcmBlob } from '../services/audioService';
 import Avatar from '../components/Avatar';
 import AudioVisualizer from '../components/AudioVisualizer';
 import TranscriptItem from '../components/transcriptitem';
 
-const SUPPORTED_LANGUAGES = [
-  { code: 'en-US', name: 'English', flag: '🇺🇸' },
-  { code: 'he-IL', name: 'עברית', flag: '🇮🇱' }
-];
-
 const App: React.FC = () => {
-  const [status, setStatus] = useState("ready"); // ready, connecting, connected
+  const [status, setStatus] = useState("ready"); 
   const [appState, setAppState] = useState("idle"); // idle, listening, processing, speaking
   const [isMuted, setIsMuted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<any[]>([]);
-  const [targetLang, setTargetLang] = useState(SUPPORTED_LANGUAGES[0]);
 
-  // Ref למניעת לולאות
   const recognitionRef = useRef<any>(null);
-  const isProcessingRef = useRef(false); 
   const scrollRef = useRef<HTMLDivElement>(null);
+  // מונע מהדפדפן "לאבד" את הדיבור באמצע
+  const activeUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  
+  // משיכת המפתח מ-Vercel
   const apiKey = import.meta.env.VITE_API_KEY;
 
+  // גלילה אוטומטית למטה
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -40,12 +37,11 @@ const App: React.FC = () => {
     window.speechSynthesis.cancel();
     setStatus("ready");
     setAppState("idle");
-    isProcessingRef.current = false;
   }, []);
 
   const startConversation = async () => {
     if (!apiKey) {
-      setError("Missing API Key");
+      setError("שגיאה: מפתח API לא נמצא (וודא שהוא נקרא VITE_API_KEY ב-Vercel)");
       return;
     }
 
@@ -53,6 +49,7 @@ const App: React.FC = () => {
       setError(null);
       setStatus("connecting");
       
+      // בקשת אישור למיקרופון
       await navigator.mediaDevices.getUserMedia({ audio: true });
       
       const genAI = new GoogleGenerativeAI(apiKey);
@@ -60,21 +57,22 @@ const App: React.FC = () => {
 
       setStatus("connected");
       
-      const intro = "Hello! I am LINGO-AI. Let's practice English.";
+      // 1. הודעת פתיחה שקטה (רק טקסט)
+      const intro = "Hello! I'm listening. Let's practice English.";
       setTranscript([{ role: 'model', text: intro, timestamp: new Date() }]);
       
-      // מתחילים בדיבור (המצב ישתנה אוטומטית ל-listening בסוף)
-      speakResponse(intro, model);
+      // 2. מתחילים ישר להקשיב (בלי לדבר)
+      initListening(model);
       
     } catch (e: any) {
-      setError("Microphone access denied");
+      setError("אין גישה למיקרופון");
       setStatus("ready");
     }
   };
 
   const initListening = (model: any) => {
-    // אם אנחנו באמצע עיבוד או דיבור - לא פותחים מיקרופון!
-    if (isProcessingRef.current) return;
+    // וידוא מוחלט שהדיבור מושתק לפני הקשבה
+    window.speechSynthesis.cancel();
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) return;
@@ -84,8 +82,8 @@ const App: React.FC = () => {
     }
 
     const recognition = new SpeechRecognition();
-    recognition.lang = 'en-US';
-    recognition.continuous = false; // עוצר אוטומטית בסוף משפט
+    recognition.lang = 'en-US'; // שפת הדיבור
+    recognition.continuous = false; // עוצר אוטומטית כשיש שקט
     recognition.interimResults = false;
 
     recognition.onstart = () => {
@@ -93,39 +91,34 @@ const App: React.FC = () => {
     };
 
     recognition.onresult = async (event: any) => {
-      // 1. תפסנו דיבור - עוצרים הכל ועוברים למצב עיבוד
       const text = event.results[0][0].transcript;
       if (!text.trim()) return;
 
-      console.log("User said:", text);
-      isProcessingRef.current = true; // נועלים מיקרופון
-      setAppState("processing"); // משנים סטטוס ל"חושב"
-      
+      // תפסנו דיבור -> עוצרים הכל ועוברים לעיבוד
+      setAppState("processing");
       setTranscript(prev => [...prev, { role: 'user', text, timestamp: new Date() }]);
       
       try {
-        // 2. שליחה ל-AI
-        const result = await model.generateContent(`You are an English tutor. Reply briefly to: "${text}"`);
+        // שליחה ל-Gemini
+        const result = await model.generateContent(`You are an English tutor. Reply briefly (1 sentence) to: "${text}"`);
         const aiText = result.response.text();
         
         setTranscript(prev => [...prev, { role: 'model', text: aiText, timestamp: new Date() }]);
         
-        // 3. ה-AI מדבר
+        // מעבר לדיבור
         speakResponse(aiText, model);
       } catch (err) {
-        setError("AI Error");
-        isProcessingRef.current = false;
-        initListening(model); // נסה שוב להקשיב אם נכשל
+        setError("שגיאת תקשורת עם ה-AI");
+        // במקרה שגיאה - נסה להקשיב שוב
+        setTimeout(() => initListening(model), 1000);
       }
     };
 
+    // אם המיקרופון התנתק סתם כך (שתיקה ארוכה) - נחדש אותו
     recognition.onend = () => {
-      // המיקרופון נסגר מעצמו.
-      // אם אנחנו לא במצב עיבוד (סתם שקט) - נפתח אותו מחדש.
-      // אם אנחנו במצב עיבוד (isProcessingRef = true) - נשאיר אותו סגור!
-      if (status === "connected" && !isProcessingRef.current) {
-        try { recognition.start(); } catch(e) {}
-      }
+        if (status === "connected" && appState === "listening") {
+            try { recognition.start(); } catch(e) {}
+        }
     };
 
     try {
@@ -135,31 +128,46 @@ const App: React.FC = () => {
   };
 
   const speakResponse = (text: string, model: any) => {
-    // מוודאים שהמיקרופון סגור
+    // עוצרים הקשבה בזמן דיבור
     if (recognitionRef.current) {
-      try { recognitionRef.current.stop(); } catch(e) {}
+        try { recognitionRef.current.stop(); } catch(e) {}
     }
-    isProcessingRef.current = true; // עדיין עסוקים
+
     setAppState("speaking");
 
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'en-US';
     utterance.rate = 1.0;
     
+    // שומרים ב-Ref כדי למנוע באגים בדפדפן
+    activeUtteranceRef.current = utterance;
+
     utterance.onend = () => {
-      // 4. סיימנו לדבר - משחררים את הנעילה וחוזרים להקשיב
-      isProcessingRef.current = false;
+      // סיימנו לדבר -> חוזרים מיד להקשיב
+      setAppState("listening");
+      activeUtteranceRef.current = null;
       if (status === "connected") {
-        setTimeout(() => initListening(model), 200);
+        initListening(model);
       }
     };
 
+    utterance.onerror = () => {
+        // התאוששות משגיאת דיבור
+        setAppState("listening");
+        activeUtteranceRef.current = null;
+        if (status === "connected") {
+            initListening(model);
+        }
+    };
+
+    // הפעלת הדיבור
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utterance);
   };
 
   return (
     <div className="h-screen w-screen bg-slate-950 text-slate-200 overflow-hidden flex flex-col md:flex-row" dir="rtl">
+      {/* סרגל צד */}
       <aside className="w-full md:w-80 h-full bg-slate-900 border-l border-white/5 p-6 flex flex-col gap-6 shadow-2xl">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg font-black text-white">L</div>
@@ -178,14 +186,15 @@ const App: React.FC = () => {
         </div>
       </aside>
 
+      {/* אזור ראשי */}
       <main className="flex-1 h-full flex flex-col relative bg-slate-950">
         <div className="absolute top-6 right-6 flex items-center gap-3 bg-slate-900/80 backdrop-blur-md px-4 py-2 rounded-full border border-white/10 shadow-xl z-10">
           <div className={`w-2 h-2 rounded-full ${status === 'connected' ? 'bg-green-500 animate-pulse' : 'bg-slate-700'}`} />
-          <span className="text-[10px] font-black uppercase tracking-widest">{status}</span>
+          <span className="text-[10px] font-black uppercase tracking-widest">{appState}</span>
         </div>
 
         <div className="flex-1 flex flex-col items-center justify-center p-8">
-          {/* שינוי האווטאר לפי המצב המדויק */}
+          {/* אווטאר מגיב למצב */}
           <Avatar state={appState === 'speaking' ? 'speaking' : appState === 'processing' ? 'thinking' : appState === 'listening' ? 'listening' : 'idle'} />
           
           <div className="mt-10 text-center">
