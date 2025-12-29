@@ -1,8 +1,8 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { Mic, MicOff, LogOut, MessageSquare } from 'lucide-react';
+import { Mic, MicOff, LogOut, MessageSquare, AlertCircle } from 'lucide-react';
 
-// ✅ נתיבים מתוקנים לפי עץ הקבצים שלך (יציאה לשורש ../)
+// ✅ נתיבים מתוקנים לפי עץ הקבצים שלך (יוצאים לשורש ../)
 import { decode, decodeAudioData, createPcmBlob } from '../services/audioService';
 import Avatar from '../components/Avatar';
 import AudioVisualizer from '../components/AudioVisualizer';
@@ -19,7 +19,7 @@ const App: React.FC = () => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   
-  // ✅ משיכה אוטומטית מ-Vercel
+  // ✅ משיכה אוטומטית של המפתח מ-Vercel
   const apiKey = import.meta.env.VITE_API_KEY;
 
   // גלילה אוטומטית
@@ -39,9 +39,9 @@ const App: React.FC = () => {
   }, []);
 
   const startConversation = async () => {
-    // בדיקה שהמפתח קיים
+    // בדיקה שהמפתח קיים ב-Vercel
     if (!apiKey) {
-      setError("שגיאה: מפתח API לא נמצא. וודא שב-Vercel הגדרת VITE_API_KEY");
+      setError("שגיאה: חסר מפתח API. וודא שהגדרת VITE_API_KEY ב-Vercel Environment Variables");
       return;
     }
 
@@ -57,8 +57,8 @@ const App: React.FC = () => {
 
       setStatus("connected");
       
-      // הודעת פתיחה טקסטואלית בלבד (בלי דיבור)
-      const intro = "Hello! I am LINGO-AI. I'm listening...";
+      // הודעת פתיחה (טקסט בלבד, בלי דיבור)
+      const intro = "Hello! I am LINGO-AI. Let's practice English together.";
       setTranscript([{ role: 'model', text: intro, timestamp: new Date() }]);
       
       // מתחילים ישר להקשיב
@@ -66,13 +66,12 @@ const App: React.FC = () => {
       
     } catch (e: any) {
       console.error(e);
-      setError("גישה למיקרופון נדחתה");
+      setError("גישה למיקרופון נדחתה. אנא אשר שימוש במיקרופון.");
       setStatus("ready");
     }
   };
 
   const initListening = (model: any) => {
-    // השתקת דיבור קודם
     window.speechSynthesis.cancel();
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -95,12 +94,12 @@ const App: React.FC = () => {
       const text = event.results[0][0].transcript;
       if (!text.trim()) return;
 
-      // 1. קלטנו דיבור -> עוברים לעיבוד
+      // 1. קלטנו דיבור -> עוצרים הכל ועוברים לעיבוד
       setAppState("processing");
       setTranscript(prev => [...prev, { role: 'user', text, timestamp: new Date() }]);
       
       try {
-        // 2. שליחה ל-Gemini
+        // 2. שולחים ל-Gemini
         const result = await model.generateContent(`You are a friendly English tutor. Reply briefly (1-2 sentences) to: "${text}"`);
         const aiText = result.response.text();
         
@@ -109,14 +108,14 @@ const App: React.FC = () => {
         // 3. ה-AI מדבר
         speakResponse(aiText, model);
       } catch (err) {
-        setError("שגיאת AI");
-        // במקרה שגיאה חוזרים להקשיב
+        setError("תקלת תקשורת עם ה-AI");
+        // נסה שוב להקשיב
         setTimeout(() => initListening(model), 1000);
       }
     };
 
     recognition.onend = () => {
-        // אם השיחה פעילה ואנחנו אמורים להקשיב (אבל המיקרופון נסגר משקט)
+        // אם המיקרופון נסגר בגלל שקט, אבל אנחנו עדיין בשיחה -> פתח אותו מחדש
         if (status === "connected" && appState === "listening") {
             try { recognition.start(); } catch(e) {}
         }
@@ -129,7 +128,6 @@ const App: React.FC = () => {
   };
 
   const speakResponse = (text: string, model: any) => {
-    // עצירת המיקרופון
     if (recognitionRef.current) {
         try { recognitionRef.current.stop(); } catch(e) {}
     }
@@ -157,7 +155,7 @@ const App: React.FC = () => {
 
   return (
     <div className="h-screen w-screen bg-slate-950 text-slate-200 overflow-hidden flex flex-col md:flex-row" dir="rtl">
-      {/* סרגל צד */}
+      {/* Sidebar / סרגל צד */}
       <aside className="w-full md:w-80 h-full bg-slate-900 border-l border-white/5 p-6 flex flex-col gap-6 shadow-2xl">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg font-black text-white">L</div>
@@ -166,7 +164,7 @@ const App: React.FC = () => {
 
         <div className="flex-1 min-h-0 flex flex-col">
           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-            <MessageSquare size={12} /> תמלול
+            <MessageSquare size={12} /> תמלול שיחה
           </label>
           <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-2 pr-2 scrollbar-thin scrollbar-thumb-slate-700">
             {transcript.map((entry, i) => (
@@ -176,23 +174,24 @@ const App: React.FC = () => {
         </div>
       </aside>
 
-      {/* אזור ראשי */}
+      {/* Main Area / מסך ראשי */}
       <main className="flex-1 h-full flex flex-col relative bg-slate-950">
-        {/* סטטוס עליון */}
+        {/* אינדיקטור סטטוס */}
         <div className="absolute top-6 right-6 flex items-center gap-3 bg-slate-900/80 backdrop-blur-md px-4 py-2 rounded-full border border-white/10 shadow-xl z-10">
           <div className={`w-2 h-2 rounded-full ${status === 'connected' ? 'bg-green-500 animate-pulse' : 'bg-slate-700'}`} />
           <span className="text-[10px] font-black uppercase tracking-widest">{appState}</span>
         </div>
 
         <div className="flex-1 flex flex-col items-center justify-center p-8">
+          {/* האווטאר המקורי */}
           <Avatar state={appState === 'speaking' ? 'speaking' : appState === 'processing' ? 'thinking' : appState === 'listening' ? 'listening' : 'idle'} />
           
           <div className="mt-10 text-center">
             <h2 className="text-4xl font-black text-white tracking-tight">
               {appState === 'listening' && "אני מקשיבה..."}
               {appState === 'processing' && "חושבת..."}
-              {appState === 'speaking' && "AI מדברת..."}
-              {appState === 'idle' && "מוכנים?"}
+              {appState === 'speaking' && "LINGO-AI מדברת..."}
+              {appState === 'idle' && "מוכנים לשיחה?"}
             </h2>
           </div>
 
@@ -203,10 +202,10 @@ const App: React.FC = () => {
           )}
         </div>
 
-        {/* כפתורים */}
+        {/* כפתורי שליטה */}
         <div className="w-full border-t border-white/5 bg-slate-950/60 backdrop-blur-sm px-6 py-8 flex items-center justify-center">
           <div className="w-full max-w-md flex flex-col items-center gap-4">
-            {error && <div className="text-red-400 text-xs font-bold bg-red-400/10 px-4 py-2 rounded-lg border border-red-400/20">{error}</div>}
+            {error && <div className="text-red-400 text-xs font-bold bg-red-400/10 px-4 py-2 rounded-lg border border-red-400/20 flex items-center gap-2"><AlertCircle size={14}/> {error}</div>}
             
             <div className="flex items-center gap-6">
               {status === 'connected' ? (
