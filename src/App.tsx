@@ -1,8 +1,9 @@
+
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Mic, MicOff, Headphones, LogOut, MessageSquare, AlertCircle } from 'lucide-react';
 
-// ✅ נתיבים לפי מבנה התיקיות שלך
+// Correct imports based on your file structure
 import { decode, decodeAudioData, createPcmBlob } from '../services/audioService';
 import Avatar from '../components/Avatar';
 import AudioVisualizer from '../components/AudioVisualizer';
@@ -14,8 +15,8 @@ const SUPPORTED_LANGUAGES = [
 ];
 
 const SCENARIOS = [
-  { id: 'chat', title: 'שיחה חופשית', icon: '💬', description: 'שיפור שטף הדיבור עם בינה מלאכותית' },
-  { id: 'translator', title: 'מתרגם אישי', icon: '🌐', description: 'תרגום סימולטני בין שפות' }
+  { id: 'chat', title: 'Free Chat', icon: '💬', description: 'Casual conversation practice' },
+  { id: 'translator', title: 'Translator', icon: '🌐', description: 'Simultaneous translation' }
 ];
 
 const App: React.FC = () => {
@@ -32,6 +33,7 @@ const App: React.FC = () => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const apiKey = import.meta.env.VITE_API_KEY;
 
+  // Auto-scroll transcript
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -49,7 +51,7 @@ const App: React.FC = () => {
 
   const startConversation = async () => {
     if (!apiKey) {
-      setError("חסר מפתח API. בדוק הגדרות ב-Vercel.");
+      setError("Missing API Key. Please check Vercel environment variables.");
       return;
     }
 
@@ -64,7 +66,7 @@ const App: React.FC = () => {
 
       setStatus("connected");
       
-      // ✅ תיקון: הוספת timestamp להודעת הפתיחה למניעת קריסה
+      // FIX: Added timestamp to initial message to prevent crash
       const intro = "Hello! I am LINGO-AI. Let's start practicing English.";
       setTranscript([{ role: 'model', text: intro, timestamp: new Date() }]);
       
@@ -72,7 +74,7 @@ const App: React.FC = () => {
       
     } catch (e: any) {
       console.error(e);
-      setError("שגיאה: וודא שהמיקרופון מאושר ונסה שוב.");
+      setError("Microphone access denied. Please allow permission.");
       setStatus("ready");
     }
   };
@@ -90,30 +92,26 @@ const App: React.FC = () => {
     recognition.continuous = false;
     recognition.interimResults = false;
 
-    recognition.onstart = () => {
-        console.log("Mic started");
-    };
-
     recognition.onresult = async (event: any) => {
       const text = event.results[0][0].transcript;
       console.log("User said:", text);
-      // ✅ הוספת timestamp גם כאן
+      
+      // FIX: Added timestamp to user message
       setTranscript(prev => [...prev, { role: 'user', text, timestamp: new Date() }]);
       
       try {
         const result = await model.generateContent(`You are an English tutor. Keep answers short (1-2 sentences). User said: "${text}".`);
         const aiText = result.response.text();
-        console.log("AI response:", aiText);
-        // ✅ הוספת timestamp גם לתגובת ה-AI
+        
+        // FIX: Added timestamp to AI response
         setTranscript(prev => [...prev, { role: 'model', text: aiText, timestamp: new Date() }]);
         speakResponse(aiText, model);
       } catch (err) {
-        setError("תקלת תקשורת עם ה-AI.");
+        setError("AI connection error.");
       }
     };
 
     recognition.onerror = (event: any) => {
-        console.error("Mic Error:", event.error);
         if (event.error === 'no-speech' && status === 'connected') {
             try { recognition.start(); } catch(e) {}
         }
@@ -149,7 +147,7 @@ const App: React.FC = () => {
 
   return (
     <div className="h-screen w-screen bg-slate-950 text-slate-200 overflow-hidden flex flex-col md:flex-row" dir="rtl">
-      {/* סרגל צד */}
+      {/* Sidebar */}
       <aside className="w-full md:w-80 h-full bg-slate-900 border-l border-white/5 p-6 flex flex-col gap-6 shadow-2xl">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg font-black text-white">L</div>
@@ -158,7 +156,7 @@ const App: React.FC = () => {
 
         <div className="flex-1 min-h-0 flex flex-col">
           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-            <MessageSquare size={12} /> היסטוריית שיחה
+            <MessageSquare size={12} /> Chat History
           </label>
           <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-2 pr-2 scrollbar-thin scrollbar-thumb-slate-700">
             {transcript.map((entry, i) => (
@@ -170,7 +168,7 @@ const App: React.FC = () => {
         </div>
       </aside>
 
-      {/* אזור ראשי */}
+      {/* Main Area */}
       <main className="flex-1 h-full flex flex-col relative bg-slate-950">
         <div className="absolute top-6 right-6 flex items-center gap-3 bg-slate-900/80 backdrop-blur-md px-4 py-2 rounded-full border border-white/10 shadow-xl z-10">
           <div className={`w-2 h-2 rounded-full ${status === 'connected' ? 'bg-green-500 animate-pulse' : 'bg-slate-700'}`} />
@@ -182,7 +180,7 @@ const App: React.FC = () => {
           
           <div className="mt-10 text-center">
             <h2 className="text-4xl font-black text-white tracking-tight">
-              {status === 'connected' ? (isSpeaking ? 'AI מדברת...' : 'אני מקשיבה...') : 'מוכנים לשיחה?'}
+              {status === 'connected' ? (isSpeaking ? 'AI Speaking...' : 'Listening...') : 'Ready to Chat?'}
             </h2>
           </div>
 
@@ -193,7 +191,7 @@ const App: React.FC = () => {
           )}
         </div>
 
-        {/* כפתורים */}
+        {/* Controls */}
         <div className="w-full border-t border-white/5 bg-slate-950/60 backdrop-blur-sm px-6 py-8 flex items-center justify-center">
           <div className="w-full max-w-md flex flex-col items-center gap-4">
             {error && <div className="text-red-400 text-xs font-bold bg-red-400/10 px-4 py-2 rounded-lg border border-red-400/20">{error}</div>}
@@ -205,12 +203,12 @@ const App: React.FC = () => {
                     {isMuted ? <MicOff /> : <Mic />}
                   </button>
                   <button onClick={stopConversation} className="bg-red-600 px-12 py-5 rounded-2xl font-black hover:bg-red-700 transition-all flex items-center gap-2 shadow-xl">
-                    <LogOut size={20} /> סיום
+                    <LogOut size={20} /> End
                   </button>
                 </>
               ) : (
                 <button onClick={startConversation} className="bg-indigo-600 px-24 py-6 rounded-3xl font-black text-xl shadow-2xl hover:bg-indigo-500 transition-all active:scale-95 flex items-center gap-4">
-                  <Mic size={30} /> התחל שיחה
+                  <Mic size={30} /> Start Chat
                 </button>
               )}
             </div>
