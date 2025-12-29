@@ -1,21 +1,13 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import {
-  Mic,
-  Headphones,
-  MessageCircle,
-  GraduationCap,
-  ArrowRightLeft,
-  ExternalLink,
-  StopCircle,
-  Play
-} from 'lucide-react';
+import { Mic, Headphones, MessageCircle, GraduationCap, ArrowRightLeft, ExternalLink, StopCircle } from 'lucide-react';
 
-// --- הגדרות (ללא שינוי) ---
+// --- הגדרות API (ללא שינוי) ---
 const getApiKey = () => {
   try { return import.meta.env.VITE_API_KEY; } catch (e) { return ""; }
 };
 
+// --- רשימת שפות (ללא שינוי) ---
 const LANGUAGES = [
   { code: 'he-IL', name: 'Hebrew', label: '🇮🇱 Hebrew' },
   { code: 'en-US', name: 'English', label: '🇺🇸 English' },
@@ -34,11 +26,9 @@ const App: React.FC = () => {
   // --- State & Logic (הלוגיקה המקורית נשמרת במלואה) ---
   const [isActive, setIsActive] = useState(false);
   const [appState, setAppState] = useState<'idle' | 'listening' | 'processing' | 'speaking'>('idle');
-  // הגדרת ברירות מחדל שיתאימו לתמונה (אנגלית לעברית)
-  const [langA, setLangA] = useState('en-US');
-  const [langB, setLangB] = useState('he-IL');
+  const [langA, setLangA] = useState('he-IL');
+  const [langB, setLangB] = useState('en-US');
   const [error, setError] = useState<string | null>(null);
-
   const recognitionRef = useRef<any>(null);
   const isSessionActiveRef = useRef(false);
 
@@ -48,6 +38,7 @@ const App: React.FC = () => {
     window.speechSynthesis.onvoiceschanged = loadVoices;
   }, []);
 
+  // אתחול מנוע בעת שינוי שפת מקור
   useEffect(() => {
     if (isActive && appState === 'listening') {
         if (recognitionRef.current) try { recognitionRef.current.stop(); } catch(e){}
@@ -69,7 +60,7 @@ const App: React.FC = () => {
     if (!SpeechRecognition) { setError("דפדפן לא נתמך. השתמש ב-Chrome"); return; }
     if (recognitionRef.current) try { recognitionRef.current.stop(); } catch(e){}
     const recognition = new SpeechRecognition();
-    recognition.lang = langA;
+    recognition.lang = langA; 
     recognition.continuous = false;
     recognition.interimResults = false;
     recognition.onstart = () => { if(isSessionActiveRef.current) setAppState("listening"); };
@@ -85,7 +76,7 @@ const App: React.FC = () => {
         }
     };
     recognition.onerror = (event: any) => {
-        if (event.error === 'not-allowed') { setError("אין גישה למיקרופון"); stopSession(); }
+        if (event.error === 'not-allowed') { setError("אין גישה למיקרופון"); stopSession(); } 
         else if (isSessionActiveRef.current && event.error !== 'aborted') { setTimeout(startListening, 500); }
     };
     try { recognition.start(); recognitionRef.current = recognition; } catch(e) {}
@@ -124,108 +115,153 @@ const App: React.FC = () => {
     if (isActive) { stopSession(); } else { isSessionActiveRef.current = true; setIsActive(true); startListening(); }
   };
 
-  // --- רכיבי עזר לממשק ---
-
-  // רכיב כרטיס צד ימין
+  // --- רכיב כרטיס מידע בצד ימין ---
   const InfoCard = ({ title, subtitle }: { title: string, subtitle?: string }) => (
-    <div className="bg-[#111426] p-6 rounded-3xl flex flex-col items-center text-center w-full max-w-md mb-6 shadow-lg border border-slate-800/50">
-        <h3 className="text-white font-bold text-lg mb-2">{title}</h3>
-        {subtitle && <p className="text-slate-300 text-lg font-bold mb-4">{subtitle}</p>}
-        <button className="bg-[#2A2F4A] hover:bg-[#363c5e] text-[#8B92FF] text-sm font-bold py-2 px-8 rounded-xl flex items-center gap-2 transition-colors">
+    <div className="bg-[#161B28] p-5 rounded-2xl flex flex-col items-end text-right w-full max-w-sm mb-4 shadow-lg border border-[#2A3045]">
+        <h3 className="text-white font-bold text-base mb-1" dir="rtl">{title}</h3>
+        {subtitle && <p className="text-slate-400 text-sm mb-3 font-mono">{subtitle}</p>}
+        <button className="bg-[#2A3045] hover:bg-[#353b54] text-[#6C72FF] text-xs font-bold py-2 px-5 rounded-xl flex items-center gap-2 transition-colors">
             Link <ExternalLink size={14} />
         </button>
     </div>
   );
 
   return (
-    // מיכל ראשי - רקע כהה מאוד, תופס את כל המסך, פריסת Flex
-    <div className="flex h-screen w-screen bg-[#080B14] text-white font-sans overflow-hidden">
-
-      {/* === סרגל צד שמאל (Left Sidebar) === */}
-      <aside className="w-[380px] bg-[#111426] p-6 flex flex-col gap-8 border-r border-slate-800/30 relative z-10 shadow-2xl">
-          {/* לוגו וכותרת */}
-          <div className="flex items-center gap-3 pl-2">
-              <div className="bg-[#8B92FF] p-2 rounded-lg">
-                <Headphones size={20} className="text-white" />
+    <div className="flex h-screen w-screen bg-[#0F121A] text-white font-sans overflow-hidden">
+      
+      {/* === סרגל צד שמאל (Sidebar) === */}
+      <aside className="w-[360px] bg-[#161B28] p-6 flex flex-col gap-6 border-r border-slate-800/50 relative z-20 shadow-2xl">
+          
+          {/* לוגו */}
+          <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 bg-[#2A3045] rounded-xl">
+                <Headphones size={24} className="text-[#6C72FF]" />
               </div>
-              <h1 className="text-xl font-extrabold tracking-wide bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">LINGOLIVE PRO</h1>
+              <h1 className="text-xl font-black tracking-wide">LINGOLIVE PRO</h1>
           </div>
 
-          {/* אזור בחירת שפות */}
-          <div className="flex flex-col gap-3 p-5 bg-[#1A1F36] rounded-[30px] border border-slate-700/30 shadow-inner">
+          {/* בוררי שפות - מעוצבים כמו בתמונה */}
+          <div className="flex flex-col gap-3 p-4 bg-[#1E2433] rounded-3xl border border-[#2A3045]">
+               
                {/* שפת מקור */}
-               <div className="flex flex-col gap-2">
-                  <label className="text-[11px] text-slate-400 ml-4 font-bold uppercase tracking-wider">NATIVE LANGUAGE</label>
+               <div className="flex flex-col gap-1">
+                  <label className="text-[10px] text-slate-400 ml-2 font-bold uppercase tracking-wider">Native Language</label>
                   <div className="relative">
-                      <select
-                          value={langA}
-                          onChange={e => setLangA(e.target.value)}
-                          className="w-full appearance-none bg-[#111426] border border-slate-700/50 rounded-2xl px-4 py-3 pr-10 text-sm font-medium text-white outline-none focus:border-[#8B92FF] transition-all cursor-pointer shadow-sm"
+                      <select 
+                          value={langA} 
+                          onChange={e => setLangA(e.target.value)} 
+                          className="w-full appearance-none bg-[#2A3045] border border-slate-700 rounded-2xl px-4 py-3 pr-10 text-sm font-bold text-white outline-none focus:border-[#6C72FF] transition-all cursor-pointer"
                       >
-                          {LANGUAGES.map(l => <option key={l.code} value={l.code} className="bg-[#111426]">{l.label}</option>)}
+                          {LANGUAGES.map(l => <option key={l.code} value={l.code} className="bg-[#2A3045]">{l.label}</option>)}
                       </select>
                   </div>
                </div>
 
                {/* אייקון החלפה */}
-               <div className="flex justify-center -my-1 relative z-10">
-                  <div className="bg-[#2A2F4A] p-1.5 rounded-full border border-slate-600/50 shadow-md">
-                       <ArrowRightLeft size={14} className="text-slate-300" />
+               <div className="flex justify-center -my-2 z-10 relative">
+                  <div className="bg-[#2A3045] p-2 rounded-full border border-slate-700 shadow-sm">
+                       <ArrowRightLeft size={16} className="text-[#6C72FF]" />
                   </div>
                </div>
 
                {/* שפת יעד */}
-                <div className="flex flex-col gap-2">
-                  <label className="text-[11px] text-slate-400 ml-4 font-bold uppercase tracking-wider">TARGET LANGUAGE</label>
+               <div className="flex flex-col gap-1">
+                  <label className="text-[10px] text-slate-400 ml-2 font-bold uppercase tracking-wider">Target Language</label>
                   <div className="relative">
-                      <select
-                          value={langB}
-                          onChange={e => setLangB(e.target.value)}
-                          className="w-full appearance-none bg-[#111426] border border-slate-700/50 rounded-2xl px-4 py-3 pr-10 text-sm font-medium text-white outline-none focus:border-[#8B92FF] transition-all cursor-pointer shadow-sm"
+                      <select 
+                          value={langB} 
+                          onChange={e => setLangB(e.target.value)} 
+                          className="w-full appearance-none bg-[#2A3045] border border-slate-700 rounded-2xl px-4 py-3 pr-10 text-sm font-bold text-white outline-none focus:border-[#6C72FF] transition-all cursor-pointer"
                       >
-                          {LANGUAGES.map(l => <option key={l.code} value={l.code} className="bg-[#111426]">{l.label}</option>)}
+                          {LANGUAGES.map(l => <option key={l.code} value={l.code} className="bg-[#2A3045]">{l.label}</option>)}
                       </select>
                   </div>
                </div>
           </div>
 
-          {/* גריד כפתורי מודולים */}
-          <div className="grid grid-cols-2 gap-4 mt-2">
-              {/* כפתור פעיל - LIVE TRANSLATION */}
-              <button className="bg-[#5D65F6] p-4 rounded-3xl flex flex-col items-center justify-center gap-3 shadow-lg shadow-indigo-500/30 transition-transform hover:scale-[1.02]">
-                  <Mic size={32} className="text-white" />
-                  <span className="text-[11px] font-extrabold text-center leading-tight tracking-wider">LIVE<br/>TRANSLATION</span>
+          {/* כפתורי מודולים (גריד) */}
+          <div className="grid grid-cols-2 gap-3 flex-1">
+              <button className="bg-[#4E54C8] p-4 rounded-2xl flex flex-col items-center justify-center gap-3 shadow-lg shadow-indigo-500/30 border border-indigo-400/50 transition-transform active:scale-95">
+                  <Mic size={28} className="text-white" />
+                  <span className="text-[10px] font-black text-center leading-tight tracking-wider">LIVE<br/>TRANSLATION</span>
               </button>
-              {/* כפתורים לא פעילים (ויזואלית בלבד) */}
-              <button className="bg-[#1A1F36] border border-slate-700/30 p-4 rounded-3xl flex flex-col items-center justify-center gap-3 opacity-80 hover:opacity-100 transition-all hover:border-slate-500">
-                  <Headphones size={32} className="text-slate-500" />
-                  <span className="text-[11px] font-bold text-slate-400 text-center leading-tight tracking-wider">SIMULTANEOUS<br/>TRANS</span>
+              <button className="bg-[#1E2433] p-4 rounded-2xl flex flex-col items-center justify-center gap-3 opacity-60 hover:opacity-100 transition-all border border-[#2A3045] hover:border-[#6C72FF]">
+                  <Headphones size={28} className="text-slate-400" />
+                  <span className="text-[10px] font-bold text-slate-400 text-center leading-tight tracking-wider">SIMULTANEOUS<br/>TRANS</span>
               </button>
-              <button className="bg-[#1A1F36] border border-slate-700/30 p-4 rounded-3xl flex flex-col items-center justify-center gap-3 opacity-80 hover:opacity-100 transition-all hover:border-slate-500">
-                  <MessageCircle size={32} className="text-slate-500" />
-                  <span className="text-[11px] font-bold text-slate-400 text-center leading-tight tracking-wider">CHAT<br/>CONVERSATION</span>
+              <button className="bg-[#1E2433] p-4 rounded-2xl flex flex-col items-center justify-center gap-3 opacity-60 hover:opacity-100 transition-all border border-[#2A3045] hover:border-[#6C72FF]">
+                  <MessageCircle size={28} className="text-slate-400" />
+                  <span className="text-[10px] font-bold text-slate-400 text-center leading-tight tracking-wider">CHAT<br/>CONVERSATION</span>
               </button>
-              <button className="bg-[#1A1F36] border border-slate-700/30 p-4 rounded-3xl flex flex-col items-center justify-center gap-3 opacity-80 hover:opacity-100 transition-all hover:border-slate-500">
-                  <GraduationCap size={32} className="text-slate-500" />
-                  <span className="text-[11px] font-bold text-slate-400 text-center leading-tight tracking-wider">LANGUAGE<br/>LEARNING</span>
+              <button className="bg-[#1E2433] p-4 rounded-2xl flex flex-col items-center justify-center gap-3 opacity-60 hover:opacity-100 transition-all border border-[#2A3045] hover:border-[#6C72FF]">
+                  <GraduationCap size={28} className="text-slate-400" />
+                  <span className="text-[10px] font-bold text-slate-400 text-center leading-tight tracking-wider">LANGUAGE<br/>LEARNING</span>
               </button>
           </div>
 
           {/* אזור אווטאר משתמש */}
-          <div className="mt-auto mb-4 flex justify-center">
-               {/* תמונה זמנית - יש להחליף לתמונת המשתמש האמיתית */}
-              <img
-                  src="https://i.pravatar.cc/150?img=47"
-                  alt="User Avatar"
-                  className="w-24 h-24 rounded-full border-4 border-[#1A1F36] shadow-xl"
-              />
+          <div className="flex justify-center py-4">
+              <div className="relative">
+                <div className="absolute inset-0 bg-[#6C72FF] rounded-full blur-md opacity-30"></div>
+                <img 
+                    src="https://i.pravatar.cc/150?img=47" 
+                    alt="User Avatar" 
+                    className="w-24 h-24 rounded-full border-4 border-[#212738] relative z-10 shadow-xl"
+                />
+              </div>
           </div>
 
           {/* הודעת שגיאה */}
           {error && (
-              <div className="text-red-400 text-xs text-center flex items-center justify-center gap-1 animate-pulse absolute bottom-24 left-0 right-0">
-                  <StopCircle size={12} /> {error}
+              <div className="text-red-400 text-xs font-bold text-center flex items-center justify-center gap-2 animate-pulse bg-red-950/50 p-2 rounded-lg border border-red-500/30">
+                  <StopCircle size={14} /> {error}
               </div>
           )}
 
-          {/* כפתור התחל ראשי (Start Button) */}
+          {/* כפתור התחלה/עצירה ראשי */}
+          <button 
+            onClick={handleToggle} 
+            className={`w-full py-4 rounded-full font-black text-base shadow-xl transition-all hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-3 ${
+                isActive 
+                ? 'bg-red-500 hover:bg-red-600 shadow-red-500/30' 
+                : 'bg-[#6C72FF] hover:bg-[#7a80ff] shadow-indigo-500/30'
+            }`}
+          >
+            {isActive ? (
+               <>
+                  <StopCircle size={20} />
+                  {appState === 'listening' ? 'LISTENING...' : appState === 'processing' ? 'TRANSLATING...' : appState === 'speaking' ? 'SPEAKING...' : 'STOP'}
+               </>
+            ) : (
+               <>
+                  <Mic size={20} /> START
+               </>
+            )}
+          </button>
+
+      </aside>
+
+      {/* === תוכן ראשי ימין (כרטיסי מידע) === */}
+      <main className="flex-1 bg-[#0F121A] p-10 flex flex-col items-center justify-center relative overflow-hidden">
+          {/* אפקט רקע עדין */}
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-[#1A2333] via-[#0F121A] to-[#0F121A] opacity-60 pointer-events-none"></div>
+
+          <div className="z-10 w-full flex flex-col items-end gap-6 pr-10">
+              {/* כרטיס ראשי - פרטים בעברית */}
+              <InfoCard 
+                  title='מאיר גלעד-מומחה לנדל"ן מסחרי -' 
+                  subtitle="0522530087" 
+              />
+
+              {/* כרטיסי דמה */}
+              <InfoCard title="פרסם כאן" />
+              <InfoCard title="פרסם כאן" />
+              <InfoCard title="פרסם כאן" />
+          </div>
+      </main>
+
+    </div>
+  );
+};
+
+export default App;
