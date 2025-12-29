@@ -1,39 +1,41 @@
-
 import React from 'react';
-import { TranscriptionEntry } from '../types';
-import { CheckCircle } from 'lucide-react';
+
+interface TranscriptEntry {
+  role: string;
+  text: string;
+  timestamp?: Date;
+}
 
 interface TranscriptItemProps {
-  entry: TranscriptionEntry;
+  entry: TranscriptEntry;
 }
 
 const TranscriptItem: React.FC<TranscriptItemProps> = ({ entry }) => {
+  // פונקציה בטוחה שלא תקריס את האפליקציה אם התאריך חסר
+  const formatTime = (date?: Date) => {
+    if (!date) return '';
+    try {
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch (e) {
+      return '';
+    }
+  };
+
   const isUser = entry.role === 'user';
-  // Check for Hebrew characters to determine text direction
-  const isRtl = /[\u0590-\u05FF]/.test(entry.text);
 
   return (
-    <div className={`flex w-full mb-3 ${isUser ? 'justify-end' : 'justify-start'} animate-in fade-in duration-500`}>
-      <div className={`max-w-[90%] rounded-2xl px-4 py-3 text-sm shadow-md transition-all ${
-        isUser 
-          ? 'bg-indigo-600 text-white rounded-tr-none border border-indigo-500' 
-          : 'bg-slate-800 text-slate-200 rounded-tl-none border border-slate-700'
-      }`}>
-        <p className={`leading-relaxed ${isRtl ? 'text-right' : 'text-left'} text-sm md:text-base`} dir={isRtl ? 'rtl' : 'ltr'}>
-          {entry.text}
-        </p>
-        
-        {entry.correction && (
-          <div className="mt-2 p-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg flex items-start gap-2">
-            <CheckCircle size={14} className="text-emerald-400 mt-0.5 shrink-0" />
-            <p className="text-emerald-100 text-[11px] leading-snug">{entry.correction}</p>
-          </div>
-        )}
-
-        <div className={`text-[9px] mt-1 opacity-50 ${isUser ? 'text-right' : 'text-left'}`}>
-          {entry.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-        </div>
+    <div className={`flex flex-col gap-1 p-3 rounded-2xl max-w-[90%] ${isUser ? 'bg-indigo-600/20 self-start mr-auto border border-indigo-500/30' : 'bg-slate-800/60 self-end ml-auto border border-slate-700'}`}>
+      <div className="flex items-center justify-between gap-4">
+        <span className={`text-[10px] font-black uppercase tracking-wider ${isUser ? 'text-indigo-400' : 'text-slate-400'}`}>
+          {isUser ? 'YOU' : 'AI'}
+        </span>
+        <span className="text-[9px] text-slate-600 font-mono">
+          {formatTime(entry.timestamp)}
+        </span>
       </div>
+      <p className="text-xs text-slate-200 leading-relaxed whitespace-pre-wrap">
+        {entry.text}
+      </p>
     </div>
   );
 };
