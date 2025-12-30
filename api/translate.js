@@ -1,11 +1,11 @@
+
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export default async function handler(req, res) {
   // --- שורת בדיקה ---
-  console.log("🚀 TRANSLATION REQUEST STARTED - V5 (MULTI-MODE) 🚀");
+  console.log("🔥 V7: STRICT LANGUAGE & QUALITY FIX 🔥");
   // ------------------
 
-  // כותרות CORS
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -30,26 +30,23 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Configuration Error on Server: Missing API Key" });
     }
 
-    // קבלת פרמטר המצב (mode) החדש מהבקשה
-    const { text, langA, langB, langALabel, langBLabel, mode } = req.body;
+    const { text, langALabel, langBLabel, mode } = req.body;
     
     if (!text) {
       console.error("Server Error: No text provided");
       return res.status(400).json({ error: "No text provided" });
     }
 
-    console.log(`Processing request in mode: ${mode || 'default (live)'}`);
-    console.log(`Text length: ${text.length}, LangA: ${langALabel}, LangB: ${langBLabel}`);
+    console.log(`Processing [Mode: ${mode || 'default'}] | Langs: ${langALabel} <-> ${langBLabel}`);
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+    // שימוש במודל מהיר יותר לשיפור זמני תגובה
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
     let prompt = "";
 
-    // בחירת הנחיה לפי המצב הנבחר
     switch (mode) {
       case 'chat':
-        // מצב שיחת צ'אט: ה-AI מגיב כבן שיח טבעי
         prompt = `You are a friendly and intelligent conversation partner.
         The user is speaking in either ${langALabel} or ${langBLabel}.
         Your task is to respond naturally to their input, keeping the conversation going.
@@ -58,58 +55,54 @@ export default async function handler(req, res) {
         
         Instructions:
         1. Identify the language of the user's input (${langALabel} or ${langBLabel}).
-        2. Respond in the OTHER language. For example, if they speak ${langALabel}, respond in ${langBLabel}.
-        3. Your response should be a natural, relevant continuation of the conversation. Do not just translate.
-        4. Keep your response concise (1-3 sentences).`;
+        2. Respond in the OTHER language.
+        3. Keep your response concise and natural.`;
         break;
 
       case 'learning':
-        // מצב לימוד שפה: ה-AI מתנהג כמורה פרטי
-        prompt = `You are a helpful and encouraging language tutor.
-        The user is learning ${langBLabel} (target language) and knows ${langALabel} (source language).
-        They have just said: "${text}"
+        prompt = `You are a helpful language tutor.
+        User knows: ${langALabel}. User is learning: ${langBLabel}.
+        User Input: "${text}"
         
         Instructions:
-        1. If the input is in the source language (${langALabel}), translate it to the target language (${langBLabel}) and provide a brief tip on pronunciation or grammar.
-        2. If the input is in the target language (${langBLabel}), correct any mistakes gently, offer a more natural way to say it if necessary, and then respond with a simple follow-up question in the target language to encourage practice.
-        3. Keep your response encouraging and educational.`;
+        1. If input is ${langALabel}, translate to ${langBLabel} and give a brief tip.
+        2. If input is ${langBLabel}, correct gently and ask a simple follow-up question in ${langBLabel}.`;
         break;
 
       case 'simultaneous':
-        // מצב תרגום סימולטני (כמו בהרצאה) - תרגום חד כיווני בלבד
-        prompt = `You are a professional simultaneous interpreter.
-        Your task is to translate spoken text from a source language to a target language in real-time.
+        // תרגום סימולטני חד-כיווני קשוח
+        prompt = `ROLE: Professional Simultaneous Interpreter.
+        TASK: Translate precisely from SOURCE to TARGET language.
         
-        Source Language: ${langALabel} (The language being spoken)
-        Target Language: ${langBLabel} (The language for translation)
-        Input text: "${text}"
+        SOURCE LANGUAGE: ${langALabel}
+        TARGET LANGUAGE: ${langBLabel}
         
-        Instructions:
-        1. Translate the input text ONLY from ${langALabel} to ${langBLabel}.
-        2. Provide a strictly literal, word-for-word translation.
-        3. Do NOT add any explanations, context, notes, or conversational elements.
-        4. Do NOT attempt to detect the language; assume it is always ${langALabel}.
-        5. Output ONLY the translated text.`;
+        INPUT TEXT: "${text}"
+        
+        INSTRUCTIONS:
+        1. Translate the INPUT TEXT directly into the TARGET LANGUAGE (${langBLabel}).
+        2. Maintain the exact meaning, tone, and register.
+        3. OUTPUT ONLY THE TRANSLATION. NO explanations. NO notes.`;
         break;
 
       default:
-        // ברירת מחדל (תרגום חי דו-כיווני) - ההנחיה הקשוחה הקודמת
-        prompt = `You are a strict, professional interpreter providing real-time bi-directional translation.
+        // ברירת מחדל: תרגום חי דו-כיווני קשוח
+        // ההנחיה החדשה והמחמירה לדיוק ושפה
+        prompt = `ROLE: Strict, Real-time Interpreter.
+        LANGUAGES: ${langALabel} and ${langBLabel}.
         
-        Languages: ${langALabel} <-> ${langBLabel}
-        Input text: "${text}"
+        INPUT TEXT: "${text}"
         
-        Instructions:
-        1. Detect the language of the input text (${langALabel} or ${langBLabel}).
-        2. Translate it IMMEDIATELY to the other language.
-        3. Provide a strictly literal, word-for-word translation.
-        4. Do NOT add any explanations, context, notes, or conversational elements.
-        5. Do NOT summarize or change the meaning.
-        6. Output ONLY the translated text.`;
+        INSTRUCTIONS:
+        1. DETECT instantly whether the INPUT TEXT is in ${langALabel} or ${langBLabel}.
+        2. IF detected as ${langALabel} -> TRANSLATE ONLY TO ${langBLabel}.
+        3. IF detected as ${langBLabel} -> TRANSLATE ONLY TO ${langALabel}.
+        4. CRITICAL: Provide the most accurate, literal translation possible.
+        5. CRITICAL: OUTPUT ONLY THE FINAL TRANSLATED TEXT. Do NOT add any other words, context, or explanations.`;
         break;
     }
 
-    console.log("Sending prompt to Gemini 2.0...");
+    console.log("Sending prompt to Gemini...");
     const result = await model.generateContent(prompt);
     const response = await result.response;
     let translation = response.text();
