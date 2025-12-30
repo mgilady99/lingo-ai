@@ -2,7 +2,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export default async function handler(req, res) {
   // --- שורת בדיקה ---
-  console.log("🔥 V7: STRICT LANGUAGE & QUALITY FIX 🔥");
+  console.log("🔥 V8: REVERTED TO GEMINI 2.0 (KNOWN GOOD MODEL) WITH STRICT PROMPTS 🔥");
   // ------------------
 
   res.setHeader('Access-Control-Allow-Credentials', true);
@@ -39,8 +39,10 @@ export default async function handler(req, res) {
     console.log(`Processing [Mode: ${mode || 'default'}] | Langs: ${langALabel} <-> ${langBLabel}`);
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    // שימוש במודל מהיר יותר לשיפור זמני תגובה
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    
+    // --- תיקון קריטי: חזרה למודל שעבד קודם ---
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+    // -------------------------------------------
 
     let prompt = "";
 
@@ -69,7 +71,6 @@ export default async function handler(req, res) {
         break;
 
       case 'simultaneous':
-        // תרגום סימולטני חד-כיווני קשוח
         prompt = `ROLE: Professional Simultaneous Interpreter.
         TASK: Translate precisely from SOURCE to TARGET language.
         
@@ -85,8 +86,6 @@ export default async function handler(req, res) {
         break;
 
       default:
-        // ברירת מחדל: תרגום חי דו-כיווני קשוח
-        // ההנחיה החדשה והמחמירה לדיוק ושפה
         prompt = `ROLE: Strict, Real-time Interpreter.
         LANGUAGES: ${langALabel} and ${langBLabel}.
         
@@ -101,7 +100,7 @@ export default async function handler(req, res) {
         break;
     }
 
-    console.log("Sending prompt to Gemini...");
+    console.log("Sending prompt to Gemini 2.0...");
     const result = await model.generateContent(prompt);
     const response = await result.response;
     let translation = response.text();
@@ -120,7 +119,8 @@ export default async function handler(req, res) {
     console.error("Detailed Server Error Stack:", error);
     return res.status(500).json({ 
         error: "Translation failed at AI provider", 
-        details: error.message
+        details: error.message,
+        modelUsed: "gemini-2.0-flash-exp"
     });
   }
 }
