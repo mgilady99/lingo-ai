@@ -24,9 +24,9 @@ function InfoCard({ title, subtitle }: { title: string; subtitle?: string }) {
 
 export default function App() {
   const [isActive, setIsActive] = useState(false);
-  // --- התיקון: הוספת 'speaking' לרשימת המצבים האפשריים ---
+  // --- התיקון הקריטי לשגיאת הבנייה נמצא כאן: הוספת 'speaking' ---
   const [appState, setAppState] = useState<'idle' | 'listening' | 'processing' | 'speaking'>('idle');
-  // -------------------------------------------------------
+  // ----------------------------------------------------------------
   const [langA, setLangA] = useState('he-IL');
   const [langB, setLangB] = useState('en-US');
   const [error, setError] = useState<string | null>(null);
@@ -328,31 +328,4 @@ export default function App() {
             )}
         </div>
 
-        <button onClick={handleToggle} className={`w-full py-6 rounded-[24px] font-black text-xl tracking-wider flex items-center justify-center gap-4 transition-all duration-300 active:scale-95 shadow-2xl ${isActive ? 'bg-red-500 shadow-red-500/30 hover:bg-red-600' : 'bg-[#5D65F6] shadow-[#5D65F6]/40 hover:bg-[#6C72FF]'}`}>
-          {isActive ? <StopCircle size={28} /> : <Mic size={28} />}
-          {isActive ? 'STOP SESSION' : `START ${mode === 'default' ? 'TRANSLATION' : mode.toUpperCase()}`}
-        </button>
-      </aside>
-
-      <main className="flex-1 flex flex-col items-center justify-center p-12 relative overflow-hidden">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_rgba(108,114,255,0.1)_0%,_transparent_60%)] pointer-events-none"></div>
-        <div className="absolute top-0 right-0 w-full h-full bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03] pointer-events-none"></div>
-        
-        <div className="z-10 flex flex-col gap-4 scale-110">
-          <InfoCard title='מאיר גלעד-מומחה לנדל"ן מסחרי -' subtitle="0522530087" />
-          <InfoCard title="שטחי מסחר להשכרה" />
-          <InfoCard title="משרדים למכירה בתל אביב" />
-          <InfoCard title="ייעוץ והערכת נכסים" />
-        </div>
-
-        <div className="absolute bottom-12 flex items-center gap-4 bg-[#161B28]/80 backdrop-blur-xl px-8 py-4 rounded-full border border-white/10 shadow-2xl">
-          <div className={`w-3 h-3 rounded-full transition-colors duration-300 ${appState === 'listening' ? 'bg-green-500 animate-ping' : appState === 'processing' ? 'bg-yellow-500 animate-pulse' : appState === 'speaking' ? 'bg-blue-500 animate-pulse' : 'bg-slate-600'}`}></div>
-          <span className="text-xs font-black uppercase tracking-[0.2em] text-slate-300">
-            {appState === 'listening' ? `Listening (${mode})...` : appState === 'processing' ? 'Translating...' : appState === 'speaking' ? 'Speaking...' : 'Ready'}
-          </span>
-        </div>
-      </main>
-
-    </div>
-  );
-}
+        <button onClick={handleToggle} className={`w-full py-6 rounded-[24px] font-black text-xl tracking
