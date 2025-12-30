@@ -35,8 +35,8 @@ export default async function handler(req, res) {
 
     const genAI = new GoogleGenerativeAI(apiKey);
     
-    // --- התיקון נמצא בשורה הזו: שינוי שם המודל ---
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    // --- שינוי למודל הישן והיציב יותר ---
+    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
     // -------------------------------------------
 
     // הנחיה חכמה לתרגום דו-כיווני
