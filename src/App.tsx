@@ -24,8 +24,9 @@ function InfoCard({ title, subtitle }: { title: string; subtitle?: string }) {
 
 export default function App() {
   const [isActive, setIsActive] = useState(false);
-  // התיקון לשגיאת הטייפסקריפט המקורית
+  // --- שים לב! זו השורה הקריטית שחייבת לכלול את 'speaking' ---
   const [appState, setAppState] = useState<'idle' | 'listening' | 'processing' | 'speaking'>('idle');
+  // -----------------------------------------------------------
   const [langA, setLangA] = useState('he-IL');
   const [langB, setLangB] = useState('en-US');
   const [error, setError] = useState<string | null>(null);
