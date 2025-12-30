@@ -1,11 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Mic, Headphones, MessageCircle, GraduationCap, ArrowRightLeft, ExternalLink, StopCircle, Activity } from 'lucide-react';
 
-// --- שינוי מבני: הגדרת הטיפוס מחוץ לקומפוננטה ---
-// זה נועד להכריח את Vercel לזהות את השינוי
-type AppState = 'idle' | 'listening' | 'processing' | 'speaking';
-// --------------------------------------------------
-
 const LANGUAGES = [
   { code: 'he-IL', name: 'Hebrew', label: '🇮🇱 Hebrew' },
   { code: 'en-US', name: 'English', label: '🇺🇸 English' },
@@ -29,8 +24,12 @@ function InfoCard({ title, subtitle }: { title: string; subtitle?: string }) {
 
 export default function App() {
   const [isActive, setIsActive] = useState(false);
-  // שימוש בטיפוס החדש שהגדרנו למעלה
-  const [appState, setAppState] = useState<AppState>('idle');
+  
+  // --- שינוי שם משתנה כדי להכריח את Vercel להתעדכן ---
+  // במקום appState, עכשיו זה currentStatus
+  const [currentStatus, setCurrentStatus] = useState<'idle' | 'listening' | 'processing' | 'speaking'>('idle');
+  // -----------------------------------------------------
+
   const [langA, setLangA] = useState('he-IL');
   const [langB, setLangB] = useState('en-US');
   const [error, setError] = useState<string | null>(null);
@@ -61,7 +60,7 @@ export default function App() {
     console.log("Stopping session entirely.");
     isActiveRef.current = false;
     setIsActive(false);
-    setAppState("idle");
+    setCurrentStatus("idle"); // שינוי שם
     if (recognitionRef.current) try { recognitionRef.current.stop(); } catch(e){}
     window.speechSynthesis.cancel();
     if (restartTimeoutRef.current) clearTimeout(restartTimeoutRef.current);
@@ -69,26 +68,25 @@ export default function App() {
 
   const restartListening = useCallback(() => {
       if (!isActiveRef.current) return;
-      // לא מפעילים מחדש אם אנחנו באמצע דיבור
-      if (appState === 'speaking') return;
+      // שינוי שם בבדיקה
+      if (currentStatus === 'speaking') return;
 
       console.log("Immediate restart triggered.");
       if (restartTimeoutRef.current) clearTimeout(restartTimeoutRef.current);
 
-      // הפעלה מחדש מהירה מאוד
       restartTimeoutRef.current = setTimeout(() => {
-          if (!isActiveRef.current || appState === 'speaking') return;
+          // שינוי שם בבדיקה
+          if (!isActiveRef.current || currentStatus === 'speaking') return;
           try {
               if (recognitionRef.current) try { recognitionRef.current.abort(); } catch(e){}
-              setAppState("listening");
+              setCurrentStatus("listening"); // שינוי שם
               startSession(); 
           } catch (e) {
               console.error("Failed to restart:", e);
-              // ניסיון חוזר במקרה קיצון
               restartTimeoutRef.current = setTimeout(restartListening, 500);
           }
-      }, 50); // השהיה מינימלית
-  }, [appState]);
+      }, 50);
+  }, [currentStatus]); // שינוי בתלות
 
   // --- לוגיקת בחירת קולות (איכות על פני מגדר) ---
   const speak = useCallback((text: string) => {
@@ -120,13 +118,13 @@ export default function App() {
     }
 
     utterance.onstart = () => {
-        setAppState("speaking");
+        setCurrentStatus("speaking"); // שינוי שם
         if (recognitionRef.current) try { recognitionRef.current.abort(); } catch(e){}
     };
 
     utterance.onend = () => {
       console.log("Finished speaking. Returning to listening.");
-      setAppState("idle");
+      setCurrentStatus("idle"); // שינוי שם
       // חזרה מיידית להקשבה בסיום הדיבור
       if (isActiveRef.current) {
           restartListening();
@@ -135,7 +133,7 @@ export default function App() {
 
     utterance.onerror = (e) => {
         console.error("Speech error:", e);
-        setAppState("idle");
+        setCurrentStatus("idle"); // שינוי שם
         if (isActiveRef.current) restartListening();
     };
 
@@ -164,7 +162,7 @@ export default function App() {
 
     rec.onstart = () => {
         console.log("Mic active.");
-        setAppState("listening");
+        setCurrentStatus("listening"); // שינוי שם
         setError(null);
     };
 
@@ -176,7 +174,7 @@ export default function App() {
       
       // עצירה מיידית של המיקרופון למניעת התנגשויות
       rec.abort();
-      setAppState("processing");
+      setCurrentStatus("processing"); // שינוי שם
 
       try {
         const langALabel = LANGUAGES.find(l => l.code === langA)?.name;
@@ -208,7 +206,7 @@ export default function App() {
       } catch (e: any) {
         console.error("Error:", e);
         setError(e.message);
-        setAppState("idle");
+        setCurrentStatus("idle"); // שינוי שם
         // במקרה שגיאה, חוזרים להקשיב מיד
         restartListening();
       }
@@ -227,8 +225,8 @@ export default function App() {
 
     // --- התיקון הקריטי לרצף הדיבור ---
     rec.onend = () => {
-      // אם הסשן פעיל, ואנחנו לא מדברים כרגע, הפעל מחדש מיד!
-      if (isActiveRef.current && appState !== 'speaking') {
+      // שינוי שם בבדיקה
+      if (isActiveRef.current && currentStatus !== 'speaking') {
           console.log("Mic ended. Restarting immediately.");
           restartListening();
       }
@@ -240,7 +238,7 @@ export default function App() {
         console.error("Start failed, retrying:", e);
         restartListening();
     }
-  }, [langA, langB, speak, appState, mode, restartListening, stopAll]);
+  }, [langA, langB, speak, currentStatus, mode, restartListening, stopAll]); // שינוי בתלות
 
   const handleToggle = () => {
     if (isActive) {
@@ -350,9 +348,10 @@ export default function App() {
         </div>
 
         <div className="absolute bottom-12 flex items-center gap-4 bg-[#161B28]/80 backdrop-blur-xl px-8 py-4 rounded-full border border-white/10 shadow-2xl">
-          <div className={`w-3 h-3 rounded-full transition-colors duration-300 ${appState === 'listening' ? 'bg-green-500 animate-ping' : appState === 'processing' ? 'bg-yellow-500 animate-pulse' : appState === 'speaking' ? 'bg-blue-500 animate-pulse' : 'bg-slate-600'}`}></div>
+          {/* שינוי שם בתצוגה למטה */}
+          <div className={`w-3 h-3 rounded-full transition-colors duration-300 ${currentStatus === 'listening' ? 'bg-green-500 animate-ping' : currentStatus === 'processing' ? 'bg-yellow-500 animate-pulse' : currentStatus === 'speaking' ? 'bg-blue-500 animate-pulse' : 'bg-slate-600'}`}></div>
           <span className="text-xs font-black uppercase tracking-[0.2em] text-slate-300">
-            {appState === 'listening' ? `Listening (${mode})...` : appState === 'processing' ? 'Translating...' : appState === 'speaking' ? 'Speaking...' : 'Ready'}
+            {currentStatus === 'listening' ? `Listening (${mode})...` : currentStatus === 'processing' ? 'Translating...' : currentStatus === 'speaking' ? 'Speaking...' : 'Ready'}
           </span>
         </div>
       </main>
