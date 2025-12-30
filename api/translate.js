@@ -1,12 +1,12 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export default async function handler(req, res) {
-  // --- שורת הדיבאג הקריטית ---
-  // אם השורה הזו תופיע בלוגים, נדע בוודאות שהקוד החדש רץ.
-  console.log("--- DEBUG MARKER: NEW CODE IS RUNNING ---");
-  // ---------------------------
+  // ---------------------------------------------------------
+  // שורת בדיקה קריטית - חייבת להופיע בלוגים של Vercel
+  console.log("🔥🔥🔥 FINAL ATTEMPT: RUNNING GEMINI 2.0 CODE 🔥🔥🔥");
+  // ---------------------------------------------------------
 
-  // הוספת כותרות CORS כדי לאפשר גישה מהדפדפן
+  // הוספת כותרות CORS מלאות
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -26,24 +26,28 @@ export default async function handler(req, res) {
   }
 
   try {
+    // ניסיון לטעון את המפתח משני שמות אפשריים
     const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_API_KEY;
     if (!apiKey) {
-      console.error("Server Error: Missing API Key");
-      return res.status(500).json({ error: "Configuration Error on Server" });
+      console.error("Server Error: Missing API Key in Environment Variables");
+      return res.status(500).json({ error: "Configuration Error on Server: Missing API Key" });
     }
 
     const { text, langA, langB, langALabel, langBLabel } = req.body;
     
     if (!text) {
+      console.error("Server Error: No text provided in request body");
       return res.status(400).json({ error: "No text provided" });
     }
 
+    console.log(`Attempting to translate text of length: ${text.length}`);
+
     const genAI = new GoogleGenerativeAI(apiKey);
     
-    // שימוש במודל הישן והיציב יותר כרגע
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    // שימוש במודל החדש ביותר
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
 
-    // הנחיה חכמה לתרגום דו-כיווני
+    // הנחיה מפורטת למודל
     const prompt = `You are a professional interpreter. 
     Your task is to act as a bridge between two languages: ${langALabel} and ${langBLabel}.
     
@@ -55,7 +59,7 @@ export default async function handler(req, res) {
     3. If it's in ${langBLabel}, translate it to ${langALabel}.
     4. Output ONLY the final translated text. Do not add any explanations, language tags, or notes. Keep it concise and natural to speak.`;
 
-    console.log("Sending prompt to Gemini...");
+    console.log("Sending prompt to Gemini 2.0...");
     const result = await model.generateContent(prompt);
     const response = await result.response;
     let translation = response.text();
@@ -63,7 +67,7 @@ export default async function handler(req, res) {
     // ניקוי רווחים מיותרים
     translation = translation.trim();
 
-    console.log("Translation received:", translation);
+    console.log("Translation received successfully:", translation);
 
     if (!translation) {
        throw new Error("Empty translation received from AI");
@@ -72,8 +76,12 @@ export default async function handler(req, res) {
     return res.status(200).json({ translation });
 
   } catch (error) {
-    console.error("Detailed Server Error:", error);
-    // החזרת הודעת שגיאה ברורה יותר לדפדפן
-    return res.status(500).json({ error: "Translation failed at AI provider", details: error.message });
+    console.error("Detailed Server Error Stack:", error);
+    // החזרת הודעת שגיאה מפורטת לדפדפן
+    return res.status(500).json({ 
+        error: "Translation failed at AI provider", 
+        details: error.message,
+        modelUsed: "gemini-2.0-flash-exp"
+    });
   }
 }
