@@ -24,7 +24,9 @@ function InfoCard({ title, subtitle }: { title: string; subtitle?: string }) {
 
 export default function App() {
   const [isActive, setIsActive] = useState(false);
+  // --- התיקון: הוספת 'speaking' לרשימת המצבים האפשריים ---
   const [appState, setAppState] = useState<'idle' | 'listening' | 'processing' | 'speaking'>('idle');
+  // -------------------------------------------------------
   const [langA, setLangA] = useState('he-IL');
   const [langB, setLangB] = useState('en-US');
   const [error, setError] = useState<string | null>(null);
@@ -32,7 +34,6 @@ export default function App() {
 
   const recognitionRef = useRef<any>(null);
   const isActiveRef = useRef(false);
-  // הסרנו טיימרים מיותרים שגרמו לבעיות
   const restartTimeoutRef = useRef<any>(null);
 
   useEffect(() => {
@@ -85,7 +86,7 @@ export default function App() {
       }, 50); // השהיה מינימלית
   }, [appState]);
 
-  // --- תיקון קריטי: לוגיקת בחירת קולות חדשה (איכות על פני מגדר) ---
+  // --- לוגיקת בחירת קולות (איכות על פני מגדר) ---
   const speak = useCallback((text: string) => {
     window.speechSynthesis.cancel();
     
@@ -103,8 +104,7 @@ export default function App() {
     const voices = window.speechSynthesis.getVoices();
     const langPrefix = targetLangCode.split('-')[0];
 
-    // --- הלוגיקה החדשה: עדיפות עליונה לקולות של גוגל ---
-    // זה יבטל את השימוש בקולות מערכת גרועים
+    // עדיפות עליונה לקולות של גוגל
     const preferredVoice = voices.find(v => v.lang.startsWith(langPrefix) && v.name.includes('Google')) ||
                            voices.find(v => v.lang.startsWith(langPrefix));
 
@@ -155,7 +155,7 @@ export default function App() {
     recognitionRef.current = rec;
     
     rec.lang = mode === 'simultaneous' ? langA : undefined; 
-    rec.continuous = false; // נשאר false, אבל הטיפול ב-onend יהיה אגרסיבי
+    rec.continuous = false; 
     rec.interimResults = false;
 
     rec.onstart = () => {
@@ -212,7 +212,6 @@ export default function App() {
 
     rec.onerror = (event: any) => {
       if (event.error === 'no-speech' || event.error === 'aborted') {
-          // התעלמות משגיאות טכניות רגילות
           return;
       }
       console.warn("Mic error:", event.error);
