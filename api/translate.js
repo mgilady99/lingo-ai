@@ -1,6 +1,11 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export default async function handler(req, res) {
+  // --- שורת הדיבאג הקריטית ---
+  // אם השורה הזו תופיע בלוגים, נדע בוודאות שהקוד החדש רץ.
+  console.log("--- DEBUG MARKER: NEW CODE IS RUNNING ---");
+  // ---------------------------
+
   // הוספת כותרות CORS כדי לאפשר גישה מהדפדפן
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -35,9 +40,8 @@ export default async function handler(req, res) {
 
     const genAI = new GoogleGenerativeAI(apiKey);
     
-    // --- שינוי למודל הישן והיציב יותר ---
+    // שימוש במודל הישן והיציב יותר כרגע
     const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-    // -------------------------------------------
 
     // הנחיה חכמה לתרגום דו-כיווני
     const prompt = `You are a professional interpreter. 
