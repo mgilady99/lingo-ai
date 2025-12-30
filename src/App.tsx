@@ -1,6 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Mic, Headphones, MessageCircle, GraduationCap, ArrowRightLeft, ExternalLink, StopCircle, Activity } from 'lucide-react';
 
+// --- שינוי מבני: הגדרת הטיפוס מחוץ לקומפוננטה ---
+// זה נועד להכריח את Vercel לזהות את השינוי
+type AppState = 'idle' | 'listening' | 'processing' | 'speaking';
+// --------------------------------------------------
+
 const LANGUAGES = [
   { code: 'he-IL', name: 'Hebrew', label: '🇮🇱 Hebrew' },
   { code: 'en-US', name: 'English', label: '🇺🇸 English' },
@@ -24,9 +29,8 @@ function InfoCard({ title, subtitle }: { title: string; subtitle?: string }) {
 
 export default function App() {
   const [isActive, setIsActive] = useState(false);
-  // --- שים לב! זו השורה הקריטית שחייבת לכלול את 'speaking' ---
-  const [appState, setAppState] = useState<'idle' | 'listening' | 'processing' | 'speaking'>('idle');
-  // -----------------------------------------------------------
+  // שימוש בטיפוס החדש שהגדרנו למעלה
+  const [appState, setAppState] = useState<AppState>('idle');
   const [langA, setLangA] = useState('he-IL');
   const [langB, setLangB] = useState('en-US');
   const [error, setError] = useState<string | null>(null);
