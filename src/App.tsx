@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Mic, Headphones, MessageCircle, GraduationCap, ArrowRightLeft, ExternalLink, StopCircle, Activity } from 'lucide-react';
 
-// רשימת השפות
 const LANGUAGES = [
   { code: 'he-IL', name: 'Hebrew', label: '🇮🇱 Hebrew' },
   { code: 'en-US', name: 'English', label: '🇺🇸 English' },
@@ -11,7 +10,6 @@ const LANGUAGES = [
   { code: 'ar-SA', name: 'Arabic', label: '🇸🇦 العربية' },
 ];
 
-// רכיב כרטיס מידע (לא השתנה)
 function InfoCard({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
     <div className="w-[500px] bg-[#161B28] p-8 rounded-[32px] flex flex-col items-center text-center border border-white/5 shadow-2xl backdrop-blur-md mb-6">
@@ -25,36 +23,28 @@ function InfoCard({ title, subtitle }: { title: string; subtitle?: string }) {
 }
 
 export default function App() {
-  // סטייטים לניהול האפליקציה
   const [isActive, setIsActive] = useState(false);
   const [appState, setAppState] = useState<'idle' | 'listening' | 'processing' | 'speaking'>('idle');
   const [langA, setLangA] = useState('he-IL');
   const [langB, setLangB] = useState('en-US');
   const [error, setError] = useState<string | null>(null);
-  
-  // --- סטייט חדש לניהול המצב הנבחר ---
-  // 'default' = Live Translation, 'simultaneous', 'chat', 'learning'
   const [mode, setMode] = useState<'default' | 'simultaneous' | 'chat' | 'learning'>('default');
 
-  // רפרנסים לשימוש בתוך קולבקים
   const recognitionRef = useRef<any>(null);
   const isActiveRef = useRef(false);
   const silenceTimerRef = useRef<any>(null);
-  const restartTimeoutRef = useRef<any>(null); // טיימר חדש להפעלה מחדש בטוחה
+  const restartTimeoutRef = useRef<any>(null);
 
-  // טעינת קולות לדיבור בדפדפן
   useEffect(() => {
     const load = () => window.speechSynthesis.getVoices();
     load();
     window.speechSynthesis.onvoiceschanged = load;
-    // ניקוי טיימרים ביציאה
     return () => {
         if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
         if (restartTimeoutRef.current) clearTimeout(restartTimeoutRef.current);
     }
   }, []);
 
-  // פונקציה לעצירה מוחלטת של הכל
   const stopAll = useCallback(() => {
     console.log("Stopping session...");
     isActiveRef.current = false;
@@ -66,65 +56,56 @@ export default function App() {
     if (restartTimeoutRef.current) clearTimeout(restartTimeoutRef.current);
   }, []);
 
-  // --- פונקציה משופרת להפעלת ההקשבה מחדש ---
   const restartListening = useCallback(() => {
-      // בודקים אם ה-Session עדיין אמור להיות פעיל
       if (!isActiveRef.current) return;
-      
-      // מונעים הפעלה מחדש אם כבר מקשיבים או מדברים
       if (appState === 'listening' || appState === 'speaking') return;
 
       console.log("Attempting to restart listening...");
-      
-      // ניקוי טיימר קודם אם קיים
       if (restartTimeoutRef.current) clearTimeout(restartTimeoutRef.current);
 
-      // שימוש ב-setTimeout קצר כדי לוודא שהמיקרופון באמת פנוי לפני הפעלה מחדש
       restartTimeoutRef.current = setTimeout(() => {
-          if (!isActiveRef.current) return; // בדיקה נוספת לפני הביצוע
+          if (!isActiveRef.current) return;
           try {
-              // אם יש מופע קיים, מנסים לעצור אותו קודם
               if (recognitionRef.current) try { recognitionRef.current.stop(); } catch(e){}
-              
               setAppState("listening");
-              // יצירת מופע חדש והתחלה
               startSession(); 
           } catch (e) {
               console.error("Failed to restart recognition:", e);
-              // ניסיון נוסף במקרה של כישלון
               restartTimeoutRef.current = setTimeout(restartListening, 1000);
           }
-      }, 300); // המתנה קצרה
-  }, [appState]); // תלות ב-appState חשובה כאן
+      }, 300);
+  }, [appState]);
 
-  // פונקציית הדיבור (TTS)
+  // --- תיקון פונקציית הדיבור לבחירת קול נשי ---
   const speak = useCallback((text: string) => {
     window.speechSynthesis.cancel();
     
-    // במצב סימולטני, תמיד מדברים בשפת היעד (LangB)
     let targetLangCode = langB;
-
     if (mode !== 'simultaneous') {
-        // במצבים אחרים, מנסים לזהות את השפה לפי הטקסט (עברית/אנגלית כברירת מחדל)
         const isHebrew = /[\u0590-\u05FF]/.test(text);
         targetLangCode = isHebrew ? 'he-IL' : 'en-US';
     }
 
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = targetLangCode;
-    utterance.rate = 1;
+    utterance.rate = 0.9; // האטה קלה לשיפור הבהירות
 
-    // ניסיון למצוא קול איכותי של גוגל
     const voices = window.speechSynthesis.getVoices();
-    const preferredVoice = voices.find(v => v.name.includes('Google') && v.lang.startsWith(targetLangCode.split('-')[0])) ||
-                           voices.find(v => v.lang.startsWith(targetLangCode.split('-')[0]));
+    const langPrefix = targetLangCode.split('-')[0];
 
-    if (preferredVoice) utterance.voice = preferredVoice;
+    // חיפוש מועדף: גם שפה נכונה וגם קול נשי
+    const preferredVoice = voices.find(v => v.lang.startsWith(langPrefix) && v.name.toLowerCase().includes('female')) ||
+                           voices.find(v => v.lang.startsWith(langPrefix) && v.name.includes('Google')) ||
+                           voices.find(v => v.lang.startsWith(langPrefix));
+
+    if (preferredVoice) {
+        console.log(`Selected voice: ${preferredVoice.name}`);
+        utterance.voice = preferredVoice;
+    }
 
     utterance.onend = () => {
       console.log("Finished speaking.");
-      setAppState("idle"); // חזרה למצב המתנה
-      // הפעלה מחדש של ההקשבה תתבצע דרך rec.onend
+      setAppState("idle");
     };
 
     utterance.onerror = (e) => {
@@ -137,8 +118,6 @@ export default function App() {
     window.speechSynthesis.speak(utterance);
   }, [langB, mode]);
 
-  // --- פונקציית התחלת הסשן (יצירת ה-Recognition) ---
-  // הועברה מחוץ ל-useEffect כדי שנוכל לקרוא לה מחדש
   const startSession = useCallback(() => {
     if (!isActiveRef.current) return;
 
@@ -149,19 +128,13 @@ export default function App() {
       return;
     }
 
-    // עצירה של מופע קודם אם קיים
     if (recognitionRef.current) try { recognitionRef.current.abort(); } catch(e){}
     
     const rec = new SpeechRecognition();
     recognitionRef.current = rec;
-    
-    // הגדרת שפת ההקשבה
-    // במצב סימולטני - מקשיבים רק לשפת המקור (LangA)
-    // במצבים אחרים - נותנים לדפדפן לזהות (לא מגדירים שפה) כדי לתמוך בדו-כיווניות
     rec.lang = mode === 'simultaneous' ? langA : undefined; 
-    
-    rec.continuous = false; // נקשיב למשפט אחד בכל פעם
-    rec.interimResults = false; // רק תוצאות סופיות
+    rec.continuous = false;
+    rec.interimResults = false;
 
     rec.onstart = () => {
         console.log("Recognition started successfully");
@@ -170,7 +143,6 @@ export default function App() {
     };
 
     rec.onresult = async (event: any) => {
-      // מניעת עיבוד כפול אם התוצאה כבר התקבלה
       if (appState === 'processing') return;
 
       const text = event.results[0][0].transcript;
@@ -178,13 +150,10 @@ export default function App() {
 
       console.log("Heard:", text);
       
-      // במצב סימולטני, לא עוצרים את ההקשבה כדי לאפשר זרימה
-      // במצבים אחרים, עוצרים כדי לעבד ולדבר
       if (mode !== 'simultaneous') {
           rec.stop();
           setAppState("processing");
       } else {
-          // בסימולטני רק מסמנים שמעבדים, בלי לעצור את המיקרופון
           setAppState("processing"); 
       }
 
@@ -203,7 +172,7 @@ export default function App() {
               langB,
               langALabel,
               langBLabel,
-              mode // --- שליחת המצב לשרת ---
+              mode
           }),
         });
 
@@ -228,32 +197,25 @@ export default function App() {
 
     rec.onerror = (event: any) => {
       console.warn("Recognition error:", event.error);
-      // התעלמות משגיאות נפוצות שלא דורשות טיפול מיוחד
       if (event.error === 'no-speech' || event.error === 'aborted') {
           return;
       }
-      // במקרה של שגיאת רשת או חוסר הרשאה, מציגים שגיאה
       if (event.error === 'network' || event.error === 'not-allowed') {
           setError(`Microphone error: ${event.error}`);
           stopAll();
       }
     };
 
-    // --- התיקון הקריטי להקשבה רציפה ---
     rec.onend = () => {
       console.log(`Recognition ended. (Active: ${isActiveRef.current}, State: ${appState})`);
-      
-      // אם הסשן פעיל, ואנחנו לא באמצע דיבור או עיבוד, צריך להפעיל מחדש
       if (isActiveRef.current && appState !== 'speaking' && appState !== 'processing') {
           console.log("Triggering restart from onend...");
           restartListening();
       } 
-      // אם סיימנו עיבוד (במצב סימולטני) ולא מדברים, גם אז מפעילים מחדש
       else if (isActiveRef.current && appState === 'processing' && mode === 'simultaneous') {
            console.log("Restarting after simultaneous processing...");
            restartListening();
       }
-      // אחרת, אם סיימנו לדבר, ה-onend של הדיבור יקרא ל-restartListening
     };
 
     try {
@@ -262,9 +224,8 @@ export default function App() {
         console.error("Failed to start initial recognition:", e);
         restartListening();
     }
-  }, [langA, langB, speak, appState, mode, restartListening]); // הוספת mode כתלות
+  }, [langA, langB, speak, appState, mode, restartListening]);
 
-  // כפתור ההפעלה הראשי
   const handleToggle = () => {
     if (isActive) {
       stopAll();
@@ -272,18 +233,15 @@ export default function App() {
       console.log("Starting new session...");
       isActiveRef.current = true;
       setIsActive(true);
-      // מחכים רגע קטן לפני ההתחלה כדי לוודא שהכל מאופס
       setTimeout(startSession, 100);
     }
   };
 
-  // החלפת שפות
   const swapLanguages = () => {
       setLangA(langB);
       setLangB(langA);
   };
 
-  // פונקציה עזר לקביעת סגנון כפתורי המצבים
   const getModeButtonStyle = (btnMode: string) => {
       const isActiveMode = mode === btnMode;
       const baseStyle = "p-6 rounded-[28px] flex flex-col items-center gap-3 transition-all active:scale-95 cursor-pointer";
@@ -296,7 +254,6 @@ export default function App() {
   return (
     <div className="flex h-screen w-screen bg-[#050815] text-white font-sans overflow-hidden">
       
-      {/* Sidebar - שמאל */}
       <aside className="w-[400px] bg-[#0B1020] p-8 flex flex-col border-r border-white/5 shadow-2xl z-20">
         <div className="flex items-center gap-3 mb-10">
           <div className="w-10 h-10 bg-[#6C72FF] rounded-xl flex items-center justify-center shadow-lg shadow-[#6C72FF]/20">
@@ -305,7 +262,6 @@ export default function App() {
           <h1 className="text-xl font-black tracking-tighter italic">LINGOLIVE PRO</h1>
         </div>
 
-        {/* בחירת שפות */}
         <div className="bg-[#161B28] p-6 rounded-[24px] mb-8 border border-white/5 relative">
           <div className="flex justify-between text-[10px] font-bold text-slate-500 uppercase mb-3 px-2">
             <span>Native Language</span>
@@ -326,7 +282,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* --- כפתורי מודולים פעילים --- */}
         <div className="grid grid-cols-2 gap-4 mb-10">
           <button onClick={() => setMode('default')} className={getModeButtonStyle('default')}>
             <Mic size={32} />
@@ -346,7 +301,6 @@ export default function App() {
           </button>
         </div>
 
-        {/* אווטאר וסטטוס */}
         <div className="mt-auto mb-6 flex flex-col items-center justify-center gap-4">
           <div className="relative">
             <div className={`absolute inset-0 rounded-full blur-3xl opacity-30 transition-colors duration-500 ${isActive ? 'bg-green-500 animate-pulse' : 'bg-[#6C72FF]'}`}></div>
@@ -354,7 +308,6 @@ export default function App() {
             {isActive && <div className="absolute bottom-0 right-0 bg-green-500 w-8 h-8 rounded-full border-4 border-[#0B1020] z-20 animate-bounce"></div>}
           </div>
             
-            {/* הודעת שגיאה */}
             {error && (
               <div className="text-red-400 text-xs font-bold bg-red-500/10 px-4 py-2 rounded-xl border border-red-500/20 animate-pulse">
                   {error}
@@ -362,14 +315,12 @@ export default function App() {
             )}
         </div>
 
-        {/* כפתור הפעלה ראשי */}
         <button onClick={handleToggle} className={`w-full py-6 rounded-[24px] font-black text-xl tracking-wider flex items-center justify-center gap-4 transition-all duration-300 active:scale-95 shadow-2xl ${isActive ? 'bg-red-500 shadow-red-500/30 hover:bg-red-600' : 'bg-[#5D65F6] shadow-[#5D65F6]/40 hover:bg-[#6C72FF]'}`}>
           {isActive ? <StopCircle size={28} /> : <Mic size={28} />}
           {isActive ? 'STOP SESSION' : `START ${mode === 'default' ? 'TRANSLATION' : mode.toUpperCase()}`}
         </button>
       </aside>
 
-      {/* Main Content - ימין (לא השתנה) */}
       <main className="flex-1 flex flex-col items-center justify-center p-12 relative overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_rgba(108,114,255,0.1)_0%,_transparent_60%)] pointer-events-none"></div>
         <div className="absolute top-0 right-0 w-full h-full bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03] pointer-events-none"></div>
@@ -381,7 +332,6 @@ export default function App() {
           <InfoCard title="ייעוץ והערכת נכסים" />
         </div>
 
-        {/* סטטוס חי למטה */}
         <div className="absolute bottom-12 flex items-center gap-4 bg-[#161B28]/80 backdrop-blur-xl px-8 py-4 rounded-full border border-white/10 shadow-2xl">
           <div className={`w-3 h-3 rounded-full transition-colors duration-300 ${appState === 'listening' ? 'bg-green-500 animate-ping' : appState === 'processing' ? 'bg-yellow-500 animate-pulse' : appState === 'speaking' ? 'bg-blue-500 animate-pulse' : 'bg-slate-600'}`}></div>
           <span className="text-xs font-black uppercase tracking-[0.2em] text-slate-300">
